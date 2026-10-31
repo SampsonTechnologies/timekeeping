@@ -1,1 +1,1 @@
-{"version": "1.4.3", "notes": "Hours now calculate exactly from shift start/end including minutes (e.g. 1200-1415 = 2.25)"}
+{"version": "1.4.4", "notes": "Hours calculate exactly from shift times incl. minutes; manual hours edits are no longer overwritten"}
