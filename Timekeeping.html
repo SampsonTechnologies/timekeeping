@@ -1,0 +1,3209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Timekeeping</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d0f12;
+    --surface: #151820;
+    --surface2: #1c2030;
+    --border: #252a38;
+    --accent: #00e5ff;
+    --accent2: #ff6b35;
+    --green: #00c97a;
+    --red: #ff4466;
+    --yellow: #ffd166;
+    --text: #e2e8f0;
+    --muted: #6b7a99;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'IBM Plex Sans', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    font-size: 14px;
+  }
+
+  /* === LAYOUT === */
+  .app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+  .header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .header-left { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .header-right { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+  /* Mobile: hide status pills, shrink buttons */
+  @media (max-width: 600px) {
+    .header { padding: 8px 10px; gap: 6px; }
+    #deficitPill { display: none; }
+    .logo { font-size: 13px; }
+    .btn-settings { width: 34px; height: 34px; font-size: 13px; }
+    .year-tab { width: 44px; font-size: 10px; }
+  }
+  .logo {
+    font-family: var(--mono);
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: 0.05em;
+  }
+  .logo span { color: var(--muted); }
+  .year-tabs { display: flex; gap: 4px; }
+  .year-tab {
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 4px 12px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all .15s;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
+  .year-tab.active { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 600; }
+  .year-tab:hover:not(.active) { border-color: var(--accent); color: var(--accent); }
+  .btn-add-year {
+    font-family: var(--mono);
+    font-size: 16px;
+    font-weight: 600;
+    width: 28px;
+    height: 28px;
+    border-radius: 4px;
+    border: 1px dashed var(--border);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all .15s;
+    flex-shrink: 0;
+  }
+  .btn-add-year:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-settings {
+    font-size: 16px;
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all .15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
+  .btn-settings:hover { border-color: var(--accent); color: var(--accent); }
+
+  .status-pill {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 16px;
+    border-radius: 6px;
+    border: 2px solid;
+    letter-spacing: 0.04em;
+    min-width: 260px;
+    text-align: center;
+    transition: all .3s;
+  }
+  .status-pill.green { background: #00c97a18; border-color: var(--green); color: var(--green); }
+  .status-pill.red   { background: #ff446618; border-color: var(--red);   color: var(--red); }
+
+  .main { display: flex; flex: 1; overflow: hidden; }
+
+  /* === SIDEBAR === */
+  .sidebar {
+    width: 260px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    overflow-y: auto;
+    transition: width 0.25s ease;
+    position: relative;
+  }
+  .sidebar.collapsed {
+    width: 0;
+    overflow: hidden;
+    border-right: none;
+  }
+  .sidebar-toggle {
+    width: 14px;
+    min-width: 14px;
+    height: 100%;
+    background: var(--surface);
+    border: none;
+    border-right: 1px solid var(--border);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    color: var(--muted);
+    flex-shrink: 0;
+    transition: color 0.15s, background 0.15s;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    padding: 0;
+  }
+  .sidebar-toggle:hover { color: var(--accent); background: var(--surface2); }
+  .sidebar-section { padding: 12px 0; border-bottom: 1px solid var(--border); }
+
+  .month-btn {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    padding: 3px 7px;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all .12s;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    flex-shrink: 0;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
+  .month-btn.active { background: var(--accent); color: #000; border-color: var(--accent); }
+  .month-btn:hover:not(.active) { border-color: var(--accent); color: var(--accent); }
+  .month-arrow {
+    font-size: 18px;
+    font-weight: 300;
+    width: 20px;
+    height: 24px;
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 0;
+    flex-shrink: 0;
+    line-height: 1;
+    transition: color .12s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .month-arrow:hover { color: var(--accent); }
+  .sidebar-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    padding: 0 14px 8px;
+    text-transform: uppercase;
+  }
+  .pp-item { min-height: 44px;
+    padding: 8px 14px;
+    cursor: pointer;
+    border-left: 3px solid transparent;
+    transition: all .12s;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
+  .pp-item:hover { background: var(--surface2); }
+  .pp-item.active { border-left-color: var(--accent); background: var(--surface2); }
+  .pp-item .pp-label { font-family: var(--mono); font-size: 11px; color: var(--text); }
+  .pp-item .pp-hrs {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .pp-item .pp-hrs.over { color: var(--green); }
+  .pp-item .pp-hrs.under { color: var(--red); }
+  .pp-item .pp-hrs.exact { color: var(--yellow); }
+
+  /* === CONTENT === */
+  .content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+  .content-header {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    background: var(--surface2);
+  }
+  .pp-title { font-family: var(--mono); font-size: 13px; font-weight: 600; }
+  .pp-stats { display: flex; gap: 20px; }
+  .stat { display: flex; flex-direction: column; align-items: flex-end; }
+  .stat-val { font-family: var(--mono); font-size: 16px; font-weight: 600; }
+  .stat-val.green { color: var(--green); }
+  .stat-val.red   { color: var(--red); }
+  .stat-val.yellow{ color: var(--yellow); }
+  .stat-lbl { font-family: var(--mono); font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+
+  .btn-add { min-height: 44px;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 7px 16px;
+    background: var(--accent);
+    color: #000;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+    transition: opacity .15s;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
+  .btn-add:hover { opacity: 0.85; }
+
+  /* === TABLE === */
+  .table-wrap { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; }
+  thead th {
+    background: var(--surface);
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    text-transform: uppercase;
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+  tbody tr {
+    border-bottom: 1px solid var(--border);
+    transition: background .1s;
+    cursor: pointer;
+  }
+  tbody tr:hover { background: var(--surface2); }
+  tbody td { padding: 9px 14px; font-size: 13px; }
+  td.mono { font-family: var(--mono); font-size: 12px; }
+  td.loc { color: var(--accent); font-size: 12px; }
+  td.hrs { font-family: var(--mono); font-weight: 600; color: var(--yellow); }
+  td.earn { font-family: var(--mono); color: var(--green); }
+  td.desc { color: var(--muted); font-style: italic; font-size: 12px; }
+  td.actions { text-align: right; }
+  .btn-del {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-family: var(--mono);
+    transition: all .12s;
+  }
+  .btn-del:hover { border-color: var(--red); color: var(--red); }
+
+  /* === MODAL === */
+  .overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  .overlay.open { display: flex; }
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    width: 480px;
+    max-height: 90vh;
+    overflow-y: auto;
+    padding: 24px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+  }
+  .modal-title {
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--accent);
+    margin-bottom: 20px;
+    letter-spacing: 0.06em;
+  }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+  .form-group { display: flex; flex-direction: column; gap: 5px; }
+  .form-group.full { grid-column: 1 / -1; }
+  .form-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+  .form-control {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 8px 10px;
+    outline: none;
+    transition: border-color .15s;
+    width: 100%;
+  }
+  .form-control:focus { border-color: var(--accent); }
+  select.form-control option { background: var(--surface); }
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+  .btn-cancel {
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 8px 18px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all .12s;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
+  .btn-cancel:hover { border-color: var(--text); color: var(--text); }
+  .btn-save {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 8px 18px;
+    background: var(--accent);
+    color: #000;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: opacity .15s;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
+  .btn-save:hover { opacity: 0.85; }
+
+  /* === SUMMARY PANEL === */
+
+
+  /* scrollbar */
+  @keyframes pulse-yellow {
+    0%, 100% { opacity: 1; border-color: var(--yellow); color: var(--yellow); }
+    50% { opacity: 0.4; border-color: var(--yellow); color: var(--yellow); }
+  }
+  .update-available {
+    animation: pulse-yellow 2s ease-in-out infinite;
+    border-color: var(--yellow) !important;
+    color: var(--yellow) !important;
+  }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--surface); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+</style>
+  <!-- Google Drive API -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="https://apis.google.com/js/api.js" async defer></script>
+  <!-- Microsoft MSAL -->
+  <script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+</head>
+<body>
+<div class="app">
+
+  <!-- HEADER -->
+  <div id="backupBanner" style="display:none;position:absolute;top:0;left:50%;transform:translateX(-50%);background:var(--yellow);color:#000;font-family:var(--mono);font-size:11px;font-weight:600;padding:6px 14px;border-radius:0 0 8px 8px;letter-spacing:0.05em;z-index:199;white-space:nowrap;display:none;align-items:center;gap:10px">&#9888; Backup overdue <button onclick="openSync();markBackupDone();document.getElementById('backupBanner').style.display='none'" style="background:#000;color:var(--yellow);border:none;padding:3px 10px;border-radius:4px;font-family:var(--mono);font-size:10px;font-weight:600;cursor:pointer">Back Up Now</button><button onclick="snoozeBackupReminder()" style="background:transparent;color:#000;border:1px solid #000;padding:3px 10px;border-radius:4px;font-family:var(--mono);font-size:10px;cursor:pointer">Remind me later</button><button onclick="snoozeBackupReminder()" style="background:transparent;border:none;color:#000;font-size:14px;cursor:pointer;padding:0 2px">&#10005;</button></div>
+  <div id="updateBanner" style="display:none;position:absolute;top:0;left:50%;transform:translateX(-50%);background:var(--yellow);color:#000;font-family:var(--mono);font-size:11px;font-weight:600;padding:4px 18px;border-radius:0 0 8px 8px;letter-spacing:0.05em;cursor:pointer;z-index:200;white-space:nowrap" onclick="checkForUpdates()">&#8635; Update Available — Click to Download</div>
+  <header class="header" style="position:relative">
+    <div class="header-left">
+      <div>
+        <div class="logo">TIME<span>KEEPING</span></div>
+        <div style="font-family:var(--mono);font-size: 10px;color:var(--muted);letter-spacing:0.04em;margin-top:2px;white-space:nowrap">&copy; 2026 Sampson Technologies &nbsp;·&nbsp; <span id="versionLabel">v1.4.4</span></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:4px" id="yearTabsWrap"></div>
+      <button class="btn-add-year" onclick="addYear()" title="Add next year">+</button>
+    </div>
+    <div class="header-right">
+      <div class="status-pill green" id="deficitPill" style="min-width:200px">✓ No Deficit</div>
+      <button class="btn-settings" onclick="checkForUpdates()" title="Check for Updates" id="updateBtn">&#8635;</button>
+      <button class="btn-settings" onclick="openSync()" title="Backup / Restore" id="syncBtn">&#8645;</button>
+      <button class="btn-settings" onclick="openExport()" title="Export">&#8599;</button>
+      <button class="btn-settings" onclick="openSettings()" title="Manage Lists">⚙</button>
+    </div>
+  <!-- Mobile status bar (shown on small screens) -->
+  <div id="mobileStatus" style="display:none;background:var(--surface2);border-bottom:1px solid var(--border);padding:6px 14px;font-family:var(--mono);font-size:10px;gap:12px;flex-wrap:wrap">
+    <span id="mobileDeficitPill" style="color:var(--green)"></span>
+  </div>
+  <style>
+    @media (max-width: 600px) {
+      #mobileStatus { display: flex !important; }
+    }
+  </style>
+  </header>
+
+  <div class="main">
+
+    <!-- SIDEBAR: Pay Periods -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-section" style="padding:10px 14px">
+        <div class="sidebar-label" style="padding:0 0 8px">Filter by Month</div>
+        <div style="display:flex;align-items:center;gap:4px">
+          <div id="monthAllBtn"></div>
+          <button class="month-arrow" id="monthScrollLeft" onclick="scrollMonths(-1)">&#8249;</button>
+          <div id="monthFilter" style="display:flex;gap:4px;overflow:hidden;flex:1;scroll-behavior:smooth"></div>
+          <button class="month-arrow" id="monthScrollRight" onclick="scrollMonths(1)">&#8250;</button>
+        </div>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-label">Pay Periods</div>
+        <div id="ppList"></div>
+      </div>
+    </aside>
+    <button class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()" title="Toggle sidebar">&#8249;</button>
+
+    <!-- MAIN CONTENT -->
+    <div class="content">
+      <div class="content-header">
+        <div class="pp-title" id="ppTitle">Select a pay period</div>
+        <div class="pp-stats" id="ppStats"></div>
+        <button class="btn-add" onclick="openModal()">+ Add Entry</button>
+        <button class="btn-add" onclick="openPTOModal()" style="background:var(--surface2);color:var(--accent);border:1px solid var(--accent);margin-left:8px">+ PTO</button>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Location</th>
+              <th>Shift</th>
+              <th>Hours</th>
+              <th>Rate</th>
+              <th>Description</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="entryTable"></tbody>
+        </table>
+        <div class="empty-state" id="emptyState" style="display:none">No entries in this pay period.</div>
+      </div>
+
+      <!-- SUMMARY BAR -->
+    </div>
+  </div>
+</div>
+
+<!-- SYNC MODAL -->
+<div class="overlay" id="syncOverlay">
+  <div class="modal" style="width:640px;max-width:95vw">
+    <div class="modal-title">&#9729; BACKUP &amp; RESTORE</div>
+
+    <!-- LOCAL FILE — always visible -->
+    <div style="margin-bottom:16px">
+      <div style="display:flex;gap:8px">
+        <button class="btn-cancel" onclick="localBackup()" style="flex:1;text-align:center">&#8659; Export JSON</button>
+        <label class="btn-cancel" style="flex:1;text-align:center;cursor:pointer;padding:7px 16px">
+          &#8657; Import JSON
+          <input type="file" accept=".json" onchange="localRestore(event)" style="display:none">
+        </label>
+      </div>
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:6px">Save JSON to OneDrive or Google Drive for manual multi-device sync.</div>
+    </div>
+
+    <!-- COLLAPSIBLE SECTIONS -->
+
+    <!-- Google Drive -->
+    <div style="border-top:1px solid var(--border)">
+      <button onclick="toggleSection('sectionGdrive')" style="width:100%;background:transparent;border:none;padding:10px 0;display:flex;justify-content:space-between;align-items:center;cursor:pointer;font-family:var(--mono);font-size:11px;font-weight:600;color:var(--muted);letter-spacing:0.08em">
+        GOOGLE DRIVE <span id="sectionGdriveIcon">&#8250;</span>
+      </button>
+      <div id="sectionGdrive" style="display:none;padding-bottom:12px">
+        <div style="display:flex;gap:6px;margin-bottom:8px">
+          <input type="text" class="form-control" id="gdriveClientIdInput" placeholder="Paste Google Client ID..." style="flex:1;font-size:11px">
+          <button class="btn-save" onclick="saveGdriveClientId()" style="padding:7px 10px;white-space:nowrap">Save</button>
+        </div>
+        <div id="gdriveStatus" style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:8px">Not connected</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn-cancel" id="gdriveConnectBtn" onclick="gdriveConnect()" style="flex:1">Connect Google Drive</button>
+          <button class="btn-save" id="gdriveBackupBtn" onclick="gdriveBackup()" style="flex:1;display:none">&#8659; Backup</button>
+          <button class="btn-cancel" id="gdriveRestoreBtn" onclick="gdriveRestore()" style="flex:1;display:none">&#8657; Restore</button>
+          <button class="btn-cancel" id="gdriveDisconnectBtn" onclick="gdriveDisconnect()" style="flex:1;display:none;color:var(--red);border-color:var(--red)">Disconnect</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- OneDrive -->
+    <div style="border-top:1px solid var(--border)">
+      <button onclick="toggleSection('sectionOnedrive')" style="width:100%;background:transparent;border:none;padding:10px 0;display:flex;justify-content:space-between;align-items:center;cursor:pointer;font-family:var(--mono);font-size:11px;font-weight:600;color:var(--muted);letter-spacing:0.08em">
+        MICROSOFT ONEDRIVE <span id="sectionOnedriveIcon">&#8250;</span>
+      </button>
+      <div id="sectionOnedrive" style="display:none;padding-bottom:12px">
+        <div style="display:flex;gap:6px;margin-bottom:8px">
+          <input type="text" class="form-control" id="msalClientIdInput" placeholder="Paste Microsoft Client ID..." style="flex:1;font-size:11px">
+          <button class="btn-save" onclick="saveMsalClientId()" style="padding:7px 10px;white-space:nowrap">Save</button>
+        </div>
+        <div id="onedriveStatus" style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:8px">Not connected</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn-cancel" id="onedriveConnectBtn" onclick="onedriveConnect()" style="flex:1">Connect OneDrive</button>
+          <button class="btn-save" id="onedriveBackupBtn" onclick="onedriveBackup()" style="flex:1;display:none">&#8659; Backup</button>
+          <button class="btn-cancel" id="onedriveRestoreBtn" onclick="onedriveRestore()" style="flex:1;display:none">&#8657; Restore</button>
+          <button class="btn-cancel" id="onedriveDisconnectBtn" onclick="onedriveDisconnect()" style="flex:1;display:none;color:var(--red);border-color:var(--red)">Disconnect</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI Import -->
+    <div style="border-top:1px solid var(--border)">
+      <button onclick="toggleSection('sectionAI')" style="width:100%;background:transparent;border:none;padding:10px 0;display:flex;justify-content:space-between;align-items:center;cursor:pointer;font-family:var(--mono);font-size:11px;font-weight:600;color:var(--muted);letter-spacing:0.08em">
+        &#129302; AI SHIFT IMPORT <span id="sectionAIIcon">&#8250;</span>
+      </button>
+      <div id="sectionAI" style="display:none;padding-bottom:12px">
+        <div style="display:flex;gap:6px;margin-bottom:10px">
+          <input type="password" class="form-control" id="geminiApiKey" placeholder="Paste Gemini API key..." style="flex:1;font-size:11px">
+          <button class="btn-save" onclick="saveGeminiKey()" style="padding:7px 10px;white-space:nowrap">Save</button>
+        </div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:8px;line-height:1.6">Type your shifts naturally — AI parses and imports automatically. Requires Gemini API key from <a href="https://aistudio.google.com" target="_blank" style="color:var(--accent)">aistudio.google.com</a></div>
+        <div style="position:relative">
+          <textarea id="geminiInput" style="width:100%;height:90px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:11px;padding:8px;padding-right:40px;resize:vertical;box-sizing:border-box" placeholder="e.g. I worked at GDIT Hanover Monday-Friday June 1-5, 1400-2200 each day at $26/hr"></textarea>
+          <button id="micBtn" onclick="toggleDictation()" title="Dictate shifts" style="position:absolute;right:6px;top:6px;background:transparent;border:1px solid var(--border);border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;color:var(--muted);transition:all .2s;touch-action:manipulation;-webkit-tap-highlight-color:transparent">&#127908;</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn-save" onclick="geminiImport()" style="flex:1" id="geminiImportBtn">&#129302; Parse &amp; Import</button>
+          <button class="btn-cancel" onclick="document.getElementById('geminiInput').value=''" style="flex:1">Clear</button>
+        </div>
+        <div id="geminiResult" style="font-family:var(--mono);font-size:11px;margin-top:8px;display:none"></div>
+      </div>
+    </div>
+
+    <!-- Bulk Import -->
+    <div style="border-top:1px solid var(--border)">
+      <button onclick="toggleSection('sectionBulk')" style="width:100%;background:transparent;border:none;padding:10px 0;display:flex;justify-content:space-between;align-items:center;cursor:pointer;font-family:var(--mono);font-size:11px;font-weight:600;color:var(--muted);letter-spacing:0.08em">
+        BULK IMPORT SHIFTS <span id="sectionBulkIcon">&#8250;</span>
+      </button>
+      <div id="sectionBulk" style="display:none;padding-bottom:12px">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:8px;line-height:1.6">
+          One shift per line: <span style="color:var(--accent)">DATE | LOCATION | SHIFT | HOURS | RATE</span><br>
+          HOURS and RATE optional. Example: <span style="color:var(--text)">2026-06-01 | GDIT - Hanover | 0600-1400 | 8 | 26</span>
+        </div>
+        <textarea id="bulkImportText" style="width:100%;height:100px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:11px;padding:8px;resize:vertical;box-sizing:border-box" placeholder="2026-06-01 | GDIT - Hanover | 0600-1400 | 8 | 26&#10;2026-06-02 | Nightwing - NBP - AJ | 1600-0000 | | 26"></textarea>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn-save" onclick="processBulkImport()" style="flex:1">&#8657; Import Shifts</button>
+          <button class="btn-cancel" onclick="document.getElementById('bulkImportText').value=''" style="flex:1">Clear</button>
+        </div>
+        <div id="bulkImportResult" style="font-family:var(--mono);font-size:11px;margin-top:8px;display:none"></div>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeSync()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- PTO MODAL -->
+<div class="overlay" id="ptoOverlay">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-title">PTO Entry</div>
+    <div class="form-group">
+      <label class="form-label">Date <span style="color:var(--red)">*</span></label>
+      <input type="date" class="form-control" id="ptoDate">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Hours <span style="color:var(--red)">*</span></label>
+      <input type="number" class="form-control" id="ptoHrs" step="0.01" min="0.5" max="40" placeholder="8">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Pay Rate</label>
+      <input type="number" class="form-control" id="ptoRate" step="0.01" placeholder="26.00">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Description</label>
+      <input type="text" class="form-control" id="ptoDesc" placeholder="PTO" value="PTO">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closePTOModal()">Cancel</button>
+      <button class="btn-save" onclick="savePTO()">Save PTO</button>
+    </div>
+  </div>
+</div>
+
+<!-- EXPORT MODAL -->
+<div class="overlay" id="exportOverlay">
+  <div class="modal" style="width:480px">
+    <div class="modal-title">&#8659; EXPORT DATA</div>
+
+    <div class="form-group" style="margin-bottom:16px">
+      <div class="form-label" style="margin-bottom:8px">DATE RANGE</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-family:var(--mono);font-size:12px;color:var(--text)">
+          <input type="radio" name="exportScope" value="all" onchange="updateExportMonths()" style="accent-color:var(--accent)"> All Years
+        </label>
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-family:var(--mono);font-size:12px;color:var(--text)">
+          <input type="radio" name="exportScope" value="year" onchange="updateExportMonths()" checked style="accent-color:var(--accent)"> Current Year (<span id="exportYearLabel">2026</span>)
+        </label>
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-family:var(--mono);font-size:12px;color:var(--text)">
+          <input type="radio" name="exportScope" value="months" onchange="updateExportMonths()" style="accent-color:var(--accent)"> Specific Months
+        </label>
+      </div>
+    </div>
+
+    <div id="exportMonthPicker" style="display:none;margin-bottom:16px">
+      <div class="form-label" style="margin-bottom:8px">SELECT YEAR & MONTHS</div>
+      <select class="form-control" id="exportYearSelect" onchange="renderExportMonthCheckboxes()" style="margin-bottom:10px"></select>
+      <div id="exportMonthCheckboxes" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+    </div>
+
+    <div class="form-group" style="margin-bottom:20px">
+      <div class="form-label" style="margin-bottom:8px">FORMAT</div>
+      <div style="display:flex;gap:10px">
+        <button class="btn-cancel" id="btnExportXlsx" onclick="doExport('xlsx')" style="flex:1;text-align:center;font-weight:600">&#128196; Excel (.xlsx)</button>
+        <button class="btn-cancel" id="btnExportPdf" onclick="doExport('pdf')" style="flex:1;text-align:center;font-weight:600">&#128444; PDF</button>
+        <button class="btn-cancel" onclick="doExport('print')" style="flex:1;text-align:center;font-weight:600">&#128438; Print</button>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeExport()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- SETTINGS MODAL -->
+<div class="overlay" id="settingsOverlay">
+  <div class="modal" style="width:600px">
+    <div class="modal-title">⚙ MANAGE LISTS</div>
+
+    <!-- Locations + Descriptions -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+      <div>
+        <div class="form-label" style="margin-bottom:4px">LOCATIONS</div>
+        <div style="font-family:var(--mono);font-size:9px;color:var(--muted);margin-bottom:8px">Set a typical start time (4-digit, e.g. 0600) to auto-suggest shifts. Leave blank for none.</div>
+        <div id="locList" style="display:flex;flex-direction:column;gap:5px;max-height:220px;overflow-y:auto;margin-bottom:8px"></div>
+        <div style="display:flex;gap:5px">
+          <input type="text" class="form-control" id="newLocInput" placeholder="Add location..." style="flex:1" onkeydown="if(event.key==='Enter')addLocation()">
+          <button class="btn-save" style="padding:7px 10px;white-space:nowrap" onclick="addLocation()">Add</button>
+        </div>
+      </div>
+      <div>
+        <div class="form-label" style="margin-bottom:8px">DESCRIPTIONS</div>
+        <div id="descList" style="display:flex;flex-direction:column;gap:5px;max-height:220px;overflow-y:auto;margin-bottom:8px"></div>
+        <div style="display:flex;gap:5px">
+          <input type="text" class="form-control" id="newDescInput" placeholder="Add description..." style="flex:1" onkeydown="if(event.key==='Enter')addDescription()">
+          <button class="btn-save" style="padding:7px 10px;white-space:nowrap" onclick="addDescription()">Add</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Manage Years -->
+    <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+      <div class="form-label" style="margin-bottom:8px">MANAGE YEARS</div>
+      <div style="display:flex;align-items:center;gap:4px">
+        <button class="month-arrow" id="yearListScrollLeft" onclick="scrollYearList(-1)">&#8249;</button>
+        <div id="yearDeleteList" style="display:flex;gap:6px;overflow:hidden;flex:1;scroll-behavior:smooth"></div>
+        <button class="month-arrow" id="yearListScrollRight" onclick="scrollYearList(1)">&#8250;</button>
+      </div>
+    </div>
+
+    <!-- Tax / Deductions / Privacy -->
+    <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap">
+      <div>
+        <div class="form-label" style="margin-bottom:6px">DEFAULT PAY RATE ($/hr)</div>
+        <input type="number" step="0.01" class="form-control" id="defaultPayRateInput" placeholder="26" style="width:90px">
+      </div>
+      <div>
+        <div class="form-label" style="margin-bottom:6px">TAX RATE (%)</div>
+        <input type="number" min="0" max="100" step="0.1" class="form-control" id="taxRateInput" placeholder="22" style="width:90px">
+      </div>
+      <div>
+        <div class="form-label" style="margin-bottom:6px">OTHER DEDUCTIONS (%)</div>
+        <input type="number" min="0" max="100" step="0.1" class="form-control" id="deductionRateInput" placeholder="0" style="width:90px">
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;flex:1" onclick="toggleHideNetPay()">
+        <div id="privacyToggle" style="width:36px;height:20px;border-radius:10px;background:var(--border);position:relative;transition:background .2s;flex-shrink:0">
+          <div id="privacyThumb" style="width:16px;height:16px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:left .2s"></div>
+        </div>
+        <div>
+          <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text)">Hide Est. Net Pay</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:1px">Shows ***** for privacy</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Backup Reminder -->
+    <div style="margin-top:12px;padding-top:14px;border-top:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:10px;flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer" onclick="toggleBackupReminder()">
+        <div id="backupReminderToggle" style="width:36px;height:20px;border-radius:10px;background:var(--border);position:relative;transition:background .2s;flex-shrink:0">
+          <div id="backupReminderThumb" style="width:16px;height:16px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:left .2s"></div>
+        </div>
+        <div>
+          <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text)">Backup Reminder</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:1px">Remind me to export JSON backup</div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <div class="form-label" style="margin-bottom:4px">INTERVAL</div>
+        <select class="form-control" id="backupReminderInterval" style="font-size:11px;width:100px">
+          <option value="7" selected>Every 7 days</option>
+          <option value="30">Every 30 days</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="clearAllData()" style="color:var(--red);border-color:var(--red)">Clear All Data</button>
+      <button class="btn-cancel" onclick="undoSettings()">Undo Changes</button>
+      <button class="btn-save" onclick="closeSettings()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADD/EDIT MODAL -->
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <div class="modal-title" id="modalTitle">ADD ENTRY</div>
+    <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:14px"><span style="color:var(--red)">*</span> Required fields</div>
+    <div class="form-grid">
+      <div class="form-group" style="grid-column:span 2">
+        <label class="form-label">Date <span style="color:var(--red)">*</span></label>
+        <input type="date" class="form-control" id="fDate">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Pay Rate ($/hr) <span style="color:var(--red)">*</span></label>
+        <input type="number" step="0.01" class="form-control" id="fRate" placeholder="26">
+      </div>
+      <div class="form-group full">
+        <label class="form-label">Location <span style="color:var(--red)">*</span></label>
+        <select class="form-control" id="fLocation" onchange="handleLocChange()"></select>
+      </div>
+      <div class="form-group full" id="fLocOtherWrap" style="display:none">
+        <label class="form-label">Location Name (Other)</label>
+        <input type="text" class="form-control" id="fLocOther" placeholder="Enter location...">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Start <span style="color:var(--red)">*</span></label>
+        <input type="text" class="form-control" id="fShiftStart" placeholder="1400" maxlength="4" inputmode="numeric" oninput="handleShiftStart(this)" style="margin-bottom:4px">
+        <div style="display:flex;gap:4px">
+          <select class="form-control" id="fShiftStartHr" onchange="onShiftSelectChange('start')" style="flex:1;font-size:11px"></select>
+          <select class="form-control" id="fShiftStartMin" onchange="onShiftSelectChange('start')" style="flex:1;font-size:11px"></select>
+        </div>
+        <div id="shiftHint" style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:4px;display:none"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">End <span style="color:var(--red)">*</span></label>
+        <input type="text" class="form-control" id="fShiftEnd" placeholder="2200" maxlength="4" inputmode="numeric" oninput="onShiftEndText()" style="margin-bottom:4px">
+        <div style="display:flex;gap:4px">
+          <select class="form-control" id="fShiftEndHr" onchange="onShiftSelectChange('end')" style="flex:1;font-size:11px"></select>
+          <select class="form-control" id="fShiftEndMin" onchange="onShiftSelectChange('end')" style="flex:1;font-size:11px"></select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Hours <span style="color:var(--red)">*</span></label>
+        <input type="number" step="0.01" min="0" max="24" class="form-control" id="fHours" placeholder="8" style="width:90px" oninput="updateEndFromHours()">
+      </div>
+      <div class="form-group full">
+        <label class="form-label">Description (optional)</label>
+        <select class="form-control" id="fDesc" onchange="handleDescChange()"></select>
+      </div>
+      <div class="form-group full" id="fDescOtherWrap" style="display:none">
+        <label class="form-label">Description</label>
+        <input type="text" class="form-control" id="fDescOther" placeholder="Enter description...">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveEntry()">Save Entry</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// DATA — imported from Excel
+// ============================================================
+// Master lists — shared across all years
+const APP_VERSION = '1.4.4';
+const UPDATE_URL = 'https://SampsonTechnologies.github.io/timekeeping/index.html';
+const VERSION_URL = 'https://SampsonTechnologies.github.io/timekeeping/version.json';
+
+let _nextId = 1;
+function ensureIds(year) {
+  (entries[year] || []).forEach(e => { if (!e._id) e._id = 'e' + (_nextId++) + Math.random().toString(36).slice(2,6); });
+}
+function ensureAllIds() {
+  Object.keys(entries).forEach(y => ensureIds(y));
+}
+
+let customShiftTimes = {}; // { locationName: '0600' } user-set typical start times
+let masterLocations = [
+  'BAE - Rockville',
+  'BAE Shredding - Rockville',
+  'GDMS - Tech Drive - AJ',
+  'GDMS Technology Drive',
+  'GDIT - Hanover',
+  'IQS - Aberdeen',
+  'KBR - Columbia',
+  'Leidos - Benjamin Franklin - Columbia',
+  'Leidos - Columbia',
+  'Leidos - Dorsey Drive - AJ',
+  'Leidos - Quarry Drive - Edgewood',
+  'Leidos Dorsey Drive - AJ',
+  'Nightwing - NBP - AJ',
+  'Peraton - Landover',
+  'Peraton - NBP - AJ',
+  'Peraton - Silver Spring',
+  'Peraton - Tech Drive - AJ',
+  'SCIS HQ'
+];
+
+let masterDescriptions = [
+  'Inspection',
+  'PTO Requested',
+  'Training'
+];
+
+const RAW = {};
+
+// ============================================================
+// STATE
+// ============================================================
+let currentYear = 2026;
+let sidebarMonth = 'ALL'; // 'ALL' or 'YYYY-MM'
+let taxRate = 22;
+let deductionRate = 0;
+let hideNetPay = false;
+let defaultPayRate = 26;
+let currentPP = null; // index of selected pay period
+let editingIdx = null; // row index in entries[] being edited
+
+// entries keyed by year — start from Excel data, allow adding
+let entries = { [new Date().getFullYear()]: [] };
+
+// ============================================================
+// PAY PERIOD LOGIC
+// Each pay period = up to 20 entries, non-rolling
+// ============================================================
+function getPayPeriodStart(dateStr) {
+  // Pay period: Fri–Thu. Find the Friday on or before this date.
+  const d = new Date(dateStr + 'T12:00:00');
+  const day = d.getDay(); // 0=Sun,1=Mon,...,5=Fri,6=Sat
+  const daysFromFri = (day + 2) % 7; // days since last Friday
+  const fri = new Date(d);
+  fri.setDate(d.getDate() - daysFromFri);
+  return fri.toISOString().slice(0, 10);
+}
+
+function getPayPeriods(year) {
+  ensureIds(year);
+  const data = [...(entries[year] || [])].sort((a, b) => a.date.localeCompare(b.date));
+  if (data.length === 0) return [];
+
+  // Group entries by their pay period start (Friday)
+  const grouped = {};
+  const order = [];
+  data.forEach(e => {
+    const ppStart = getPayPeriodStart(e.date);
+    if (!grouped[ppStart]) { grouped[ppStart] = []; order.push(ppStart); }
+    grouped[ppStart].push(e);
+  });
+
+  const periods = [];
+  order.forEach(ppStart => {
+    const slice = grouped[ppStart];
+    const totalHrs = slice.reduce((s, e) => s + Number(e.hrs), 0);
+    const totalEarn = slice.reduce((s, e) => s + Number(e.hrs) * Number(e.rate), 0);
+    // Thu end date = ppStart + 6 days
+    const fri = new Date(ppStart + 'T12:00:00');
+    const thu = new Date(fri); thu.setDate(fri.getDate() + 6);
+    const thuStr = thu.toISOString().slice(0, 10);
+    periods.push({
+      idx: periods.length,
+      ppStart,
+      entries: slice,
+      totalHrs,
+      totalEarn,
+      ot: Math.max(0, totalHrs - 40),
+      needed: Math.max(0, 40 - totalHrs),
+      label: 'Pay Period ' + (periods.length + 1),
+      dateRange: fmt(ppStart) + ' – ' + fmt(thuStr)
+    });
+  });
+  return periods;
+}
+
+function fmt(d) {
+  if (!d) return '';
+  const parts = d.split('-');
+  return `${parts[1]}/${parts[2]}`;
+}
+
+function fmtMoney(n) {
+  return '$' + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+// Cumulative OT deficit for the year up to and including a given PP index
+// Only grows when a period is under 40 hrs — never reduced by OT periods
+// Shortfall converted to OT hours needed: shortfall / 1.5
+function getCumulativeDeficit(year, upToPPIdx) {
+  const pps = getPayPeriods(year);
+  let deficit = 0;
+  for (let i = 0; i <= upToPPIdx && i < pps.length; i++) {
+    const hrs = pps[i].totalHrs;
+    if (hrs < 40) {
+      // Short week — deficit grows based on shortfall from 40 only
+      deficit += (40 - hrs) / 1.5;
+    } else if (hrs > 40 && deficit > 0) {
+      // OT week — chip away at deficit with hours above 40, floor at 0
+      deficit = Math.max(0, deficit - (hrs - 40));
+    }
+    // If deficit hits 0, it resets — any further OT doesn't bank
+  }
+  return deficit;
+}
+
+// Hybrid deficit for the live pill: completed weeks count fully, but the
+// current (in-progress) week only counts its OT to REDUCE the deficit —
+// it never adds to the deficit just because the week isn't fully logged yet.
+function getDisplayDeficit(year, lastIdx) {
+  const pps = getPayPeriods(year);
+  let deficit = 0;
+  for (let i = 0; i <= lastIdx && i < pps.length; i++) {
+    const hrs = pps[i].totalHrs;
+    const isCurrent = (i === lastIdx);
+    if (hrs < 40) {
+      if (!isCurrent) deficit += (40 - hrs) / 1.5; // only completed short weeks add
+    } else if (hrs > 40 && deficit > 0) {
+      deficit = Math.max(0, deficit - (hrs - 40)); // OT pays down (current week included)
+    }
+  }
+  return deficit;
+}
+
+// Current (last) pay period
+function getCurrentPP(year) {
+  const pps = getPayPeriods(year);
+  return pps.length - 1;
+}
+
+// ============================================================
+// RENDER
+// ============================================================
+function renderYearTabs() {
+  const tabs = Object.keys(entries).sort((a,b) => {
+    if (a === 'NEW') return 1;
+    if (b === 'NEW') return -1;
+    return Number(a) - Number(b);
+  });
+  const tabsHtml = tabs.map(yr => {
+    const isNew = yr === 'NEW';
+    const isActive = yr === String(currentYear);
+    return `<button class="year-tab ${isActive ? 'active' : ''}" data-yr="${yr}"
+      onclick="setYear('${yr}')"
+      ondblclick="renameYear('${yr}')"
+      title="Double-click to rename"
+      style="${isNew ? 'border-style:dashed;' : ''}"
+    >  ${isNew ? 'New' : yr}</button>`;
+  }).join('');
+  const showArrows = tabs.length > 3;
+  const container = document.getElementById('yearTabsWrap');
+  container.innerHTML = (showArrows ? `<button class="month-arrow" onclick="scrollYearTabs(-1)">&#8249;</button>` : '') +
+    `<div id="yearTabs" style="display:flex;gap:4px;overflow:hidden;${showArrows ? 'width:168px;' : ''}">${tabsHtml}</div>` +
+    (showArrows ? `<button class="month-arrow" onclick="scrollYearTabs(1)">&#8250;</button>` : '');
+}
+
+function renameYear(oldKey) {
+  var btn = document.querySelector('[data-yr="' + oldKey + '"]');
+  if (!btn) return;
+  var input = document.createElement('input');
+  input.type = 'number';
+  input.value = oldKey === 'NEW' ? new Date().getFullYear() : oldKey;
+  input.style.cssText = 'width:52px;font-family:var(--mono);font-size:11px;font-weight:600;background:var(--surface);border:1px solid var(--accent);border-radius:4px;color:var(--text);padding:2px 4px;outline:none;text-align:center;';
+  btn.replaceWith(input);
+  input.select();
+  input.focus();
+  var committed = false;
+
+  function commit() {
+    if (committed) return;
+    committed = true;
+    var newYear = parseInt(input.value);
+    // If unchanged and not NEW, just restore the tab
+    if (newYear === Number(oldKey) && oldKey !== 'NEW') { renderYearTabs(); return; }
+    if (!newYear || newYear < 1900 || newYear > 2100) { cancelRename(); return; }
+    if (entries[newYear] && String(newYear) !== String(oldKey)) {
+      showToast('Year ' + newYear + ' already exists.', 'red');
+      cancelRename(); return;
+    }
+    entries[newYear] = entries[oldKey] || [];
+    delete entries[oldKey];
+    currentYear = newYear;
+    ensureAllIds();
+    renderYearTabs();
+    render();
+    autosave();
+  }
+
+  function cancelRename() {
+    committed = true;
+    // Only delete if it was a NEW unsaved year
+    if (oldKey === 'NEW' && entries['NEW']) { delete entries['NEW']; }
+    renderYearTabs();
+  }
+
+  input.addEventListener('blur', commit);
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { input.blur(); }
+    if (e.key === 'Escape') { input.removeEventListener('blur', commit); cancelRename(); }
+  });
+}
+
+
+
+
+
+
+function scrollYearList(dir) {
+  const el = document.getElementById('yearDeleteList');
+  el.scrollLeft += dir * 100;
+  setTimeout(() => {
+    document.getElementById('yearListScrollLeft').style.opacity = el.scrollLeft > 0 ? '1' : '0.2';
+    document.getElementById('yearListScrollRight').style.opacity = el.scrollLeft < el.scrollWidth - el.clientWidth ? '1' : '0.2';
+  }, 150);
+}
+
+function scrollYearTabs(dir) {
+  const el = document.getElementById('yearTabs');
+  if (el) el.scrollLeft += dir * 80;
+}
+
+function confirmDeleteYear(yr, btn) {
+  if (btn.dataset.confirm === 'yes') {
+    // Second click — actually delete
+    delete entries[yr];
+    const remaining = Object.keys(entries).sort((a,b) => {
+      if (a === 'NEW') return 1; if (b === 'NEW') return -1;
+      return Number(a) - Number(b);
+    });
+    currentYear = remaining[remaining.length - 1];
+    if (!isNaN(currentYear)) currentYear = Number(currentYear);
+    sidebarMonth = 'ALL';
+    renderYearTabs();
+    renderSettingsLists();
+    currentPP = getCurrentPP(currentYear);
+    render();
+    autosave();
+  } else {
+    // First click — ask for confirmation inline
+    btn.dataset.confirm = 'yes';
+    btn.textContent = 'Confirm?';
+    btn.style.borderColor = 'var(--red)';
+    btn.style.color = 'var(--red)';
+    setTimeout(() => {
+      if (btn.dataset.confirm === 'yes') {
+        btn.dataset.confirm = '';
+        btn.textContent = 'Delete';
+        btn.style.borderColor = '';
+        btn.style.color = '';
+      }
+    }, 3000);
+  }
+}
+
+function deleteYear(yr) {
+  delete entries[yr];
+  const remaining = Object.keys(entries).sort((a,b) => {
+    if (a === 'NEW') return 1; if (b === 'NEW') return -1;
+    return Number(a) - Number(b);
+  });
+  currentYear = remaining[remaining.length - 1];
+  if (!isNaN(currentYear)) currentYear = Number(currentYear);
+  sidebarMonth = 'ALL';
+  renderYearTabs();
+  renderSettingsLists();
+  currentPP = getCurrentPP(currentYear);
+  render();
+  autosave();
+}
+
+function setYear(yr) {
+  flushQuickAdd();
+  currentYear = isNaN(yr) ? yr : Number(yr);
+  sidebarMonth = 'ALL';
+  renderYearTabs();
+  currentPP = getCurrentPP(currentYear);
+  render();
+}
+
+function addYear() {
+  if (entries['NEW']) { showToast('Rename the existing new year first.', 'red'); return; }
+  // Find the highest numeric year and add the next one
+  const numericYears = Object.keys(entries).filter(y => !isNaN(y)).map(Number);
+  let newYear;
+  if (numericYears.length === 0) {
+    newYear = new Date().getFullYear();
+  } else {
+    newYear = Math.max(...numericYears) + 1;
+  }
+  if (entries[newYear]) { showToast('Year ' + newYear + ' already exists.', 'red'); return; }
+  entries[newYear] = [];
+  currentYear = newYear;
+  sidebarMonth = 'ALL';
+  currentPP = 0;
+  renderYearTabs();
+  render();
+  autosave();
+  showToast('Year ' + newYear + ' added ✓', 'green');
+}
+
+function render() {
+  renderSidebar();
+  renderContent();
+  renderStatus();
+}
+
+function renderSidebar() {
+  const pps = getPayPeriods(currentYear);
+
+  // Build month list from actual pay period dates
+  const monthSet = new Set();
+  pps.forEach(pp => {
+    if (pp.entries.length > 0) {
+      monthSet.add(pp.entries[0].date.slice(0, 7)); // YYYY-MM
+    }
+  });
+  const months = [...monthSet].sort();
+  const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  // Render All pill (pinned)
+  document.getElementById('monthAllBtn').innerHTML =
+    `<button class="month-btn ${sidebarMonth === 'ALL' ? 'active' : ''}" onclick="setMonthFilter('ALL')" data-month="ALL">All</button>`;
+
+  // Render month pills (scrollable)
+  const monthBtns = months.map(m => {
+    const label = MONTH_NAMES[parseInt(m.split('-')[1]) - 1];
+    return `<button class="month-btn ${sidebarMonth === m ? 'active' : ''}" onclick="setMonthFilter('${m}')" data-month="${m}">${label}</button>`;
+  }).join('');
+  document.getElementById('monthFilter').innerHTML = monthBtns;
+
+  // Show/hide arrows based on overflow
+  const mf = document.getElementById('monthFilter');
+  setTimeout(() => {
+    const hasOverflow = mf.scrollWidth > mf.clientWidth;
+    document.getElementById('monthScrollLeft').style.opacity = hasOverflow && mf.scrollLeft > 0 ? '1' : '0.2';
+    document.getElementById('monthScrollRight').style.opacity = hasOverflow && mf.scrollLeft < mf.scrollWidth - mf.clientWidth ? '1' : '0.2';
+  }, 0);
+
+  // Filter pay periods by selected month
+  const filtered = sidebarMonth === 'ALL'
+    ? pps
+    : pps.filter(pp => pp.entries.length > 0 && pp.entries[0].date.slice(0, 7) === sidebarMonth);
+
+  const MN2 = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  let html = '';
+  let lastMonth = null;
+  let monthRowCount = 0;
+
+  filtered.forEach(pp => {
+    const ppMonth = pp.entries[0]?.date?.slice(0, 7);
+    const hrsClass = pp.needed === 0 ? 'over' : (pp.totalHrs < 30 ? 'under' : 'exact');
+    const hrsLabel = pp.needed === 0 ? '+' + pp.ot.toFixed(1) + 'h' : '-' + pp.needed.toFixed(1) + 'h';
+    const activeStyle = pp.idx === currentPP ? 'border-left-color:var(--accent);' : '';
+
+    if (sidebarMonth === 'ALL' && ppMonth && ppMonth !== lastMonth) {
+      const monthLabel = MN2[parseInt(ppMonth.split('-')[1]) - 1];
+      html += '<div style="padding:4px 12px 3px;background:#0d1520;border-top:1px solid var(--border);border-bottom:1px solid var(--border)"><span style="font-size: 10px;font-weight:600;letter-spacing:0.14em;color:var(--accent);text-transform:uppercase">' + monthLabel + '</span></div>';
+      lastMonth = ppMonth;
+      monthRowCount = 0;
+    }
+
+    const rowBg = sidebarMonth === 'ALL' ? (monthRowCount % 2 === 0 ? 'transparent' : '#1a2030') : 'transparent';
+    monthRowCount++;
+
+    html += '<div class="pp-item" onclick="selectPP(' + pp.idx + ')" style="background:' + rowBg + ';' + activeStyle + '">'
+      + '<div>'
+      + '<div class="pp-label">' + pp.label + '</div>'
+      + '<div style="font-size:10px;color:var(--muted);font-family:var(--mono);margin-top:2px">' + pp.dateRange + '</div>'
+      + '</div>'
+      + '<div class="pp-hrs ' + hrsClass + '">' + hrsLabel + '</div>'
+      + '</div>';
+  });
+
+  document.getElementById('ppList').innerHTML = html || '<div style="padding:10px 14px;font-family:var(--mono);font-size:11px;color:var(--muted)">No periods this month.</div>';
+}
+
+function setMonthFilter(month) {
+  flushQuickAdd();
+  sidebarMonth = month;
+  renderSidebar();
+  // Scroll active pill into view
+  setTimeout(() => {
+    const btn = document.querySelector(`[data-month="${month}"]`);
+    if (btn) btn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+  }, 0);
+}
+
+function scrollMonths(dir) {
+  const mf = document.getElementById('monthFilter');
+  mf.scrollLeft += dir * 80;
+  setTimeout(() => {
+    document.getElementById('monthScrollLeft').style.opacity = mf.scrollLeft > 0 ? '1' : '0.2';
+    document.getElementById('monthScrollRight').style.opacity = mf.scrollLeft < mf.scrollWidth - mf.clientWidth ? '1' : '0.2';
+  }, 150);
+}
+
+function renderContent() {
+  const pps = getPayPeriods(currentYear);
+  if (pps.length === 0) {
+    document.getElementById('ppTitle').innerHTML = `<div style="font-size:13px;font-weight:600;color:var(--accent);font-family:var(--mono)">${currentYear}</div><div style="font-size:11px;color:var(--muted)">No entries yet</div>`;
+    document.getElementById('ppStats').innerHTML = '';
+    document.getElementById('entryTable').innerHTML = '';
+    document.getElementById('emptyState').style.display = 'block';
+    document.getElementById('emptyState').textContent = 'To get started, click + Add Entry!';
+    return;
+  }
+  const pp = pps[currentPP] || pps[pps.length - 1];
+
+  document.getElementById('ppTitle').innerHTML = `<div style="font-size:13px;font-weight:600;color:var(--accent);font-family:var(--mono);letter-spacing:0.06em">${pp.label}</div><div style="font-size:11px;color:var(--muted)">${pp.dateRange}</div>`;
+
+  // Stats
+  const priorDeficit = currentPP > 0 ? getCumulativeDeficit(currentYear, currentPP - 1) : 0;
+  const deficit = getCumulativeDeficit(currentYear, currentPP);
+  // Target = 40 + straight-time equivalent of prior OT deficit
+  const target = 40 + (priorDeficit * 1.5);
+  const effectiveNeeded = Math.max(0, 40 - pp.totalHrs);
+  const effectiveOT = Math.max(0, pp.totalHrs - 40);
+  const onTarget = effectiveNeeded === 0;
+  const hrsColor = onTarget ? 'green' : 'red';
+  document.getElementById('ppStats').innerHTML = `
+    <div class="stat">
+      <div class="stat-val ${hrsColor}">${fmtHrs(pp.totalHrs)}</div>
+      <div class="stat-lbl">Total Hrs</div>
+    </div>
+    <div class="stat">
+      <div class="stat-val ${effectiveOT > 0 ? 'green' : 'yellow'}">${fmtHrs(effectiveOT)}</div>
+      <div class="stat-lbl">OT Hrs</div>
+    </div>
+    <div class="stat">
+      <div class="stat-val ${effectiveNeeded > 0 ? 'red' : 'green'}">${fmtHrs(effectiveNeeded)}</div>
+      <div class="stat-lbl">Hrs Short</div>
+    </div>
+    <div class="stat">
+      <div class="stat-val green">${hideNetPay ? '*****' : fmtMoney(pp.totalEarn * (1 - (taxRate + deductionRate) / 100))}</div>
+      <div class="stat-lbl">Est. Net Pay</div>
+    </div>
+  `;
+
+  // Table — inline-editable rows using each entry's _id
+  ensureAllIds();
+  const locOpts = [...masterLocations].sort((a,b)=>a.localeCompare(b)).map(l => '<option value="'+l.replace(/"/g,'&quot;')+'">'+l+'</option>').join('');
+  const descOpts = ['<option value=""></option>'].concat([...masterDescriptions].sort((a,b)=>a.localeCompare(b)).map(d => '<option value="'+d.replace(/"/g,'&quot;')+'">'+d+'</option>')).join('');
+
+  const rows = pp.entries.map((e) => {
+    const id = e._id;
+    if (e.type === 'PTO') {
+      // PTO row — clean block, no location or shift columns
+      return `<tr data-id="${id}" style="background:rgba(45,212,191,0.04)">
+        <td><input type="date" value="${e.date}" onchange="inlineEdit('${id}','date',this.value)" style="background:transparent;border:1px solid transparent;color:var(--text);font-family:var(--mono);font-size:12px;padding:3px 4px;border-radius:4px;width:130px" onfocus="this.style.borderColor='var(--border)';this.style.background='var(--surface2)'" onblur="this.style.borderColor='transparent';this.style.background='transparent'"></td>
+        <td colspan="2" style="font-family:var(--mono);font-size:12px;color:var(--accent);font-weight:600;padding:3px 8px;letter-spacing:0.05em">PTO</td>
+        <td><input type="number" step="0.01" value="${fmtHrs(e.hrs)}" onchange="inlineEdit('${id}','hrs',this.value)" style="background:transparent;border:1px solid transparent;color:var(--text);font-family:var(--mono);font-size:12px;padding:3px 4px;border-radius:4px;width:55px" onfocus="this.style.borderColor='var(--border)';this.style.background='var(--surface2)'" onblur="this.style.borderColor='transparent';this.style.background='transparent'"></td>
+        <td><input type="number" step="0.01" value="${Number(e.rate).toFixed(2)}" onchange="inlineEdit('${id}','rate',this.value)" style="background:transparent;border:1px solid transparent;color:var(--text);font-family:var(--mono);font-size:12px;padding:3px 4px;border-radius:4px;width:65px" onfocus="this.style.borderColor='var(--border)';this.style.background='var(--surface2)'" onblur="this.style.borderColor='transparent';this.style.background='transparent'"></td>
+        <td><input type="text" value="${e.desc || 'PTO'}" onchange="inlineEdit('${id}','desc',this.value)" style="background:transparent;border:1px solid transparent;color:var(--muted);font-family:var(--mono);font-size:12px;padding:3px 4px;border-radius:4px;width:120px" onfocus="this.style.borderColor='var(--border)';this.style.background='var(--surface2)'" onblur="this.style.borderColor='transparent';this.style.background='transparent'"></td>
+        <td class="actions" style="white-space:nowrap">
+          <button class="btn-del" title="Delete" onclick="confirmDeleteById('${id}', this, event)">✕</button>
+        </td>
+      </tr>`;
+    }
+    return `<tr data-id="${id}">
+      <td><input type="date" value="${e.date}" onchange="inlineEdit('${id}','date',this.value)" style="background:transparent;border:1px solid transparent;color:var(--text);font-family:var(--mono);font-size:12px;padding:3px 4px;border-radius:4px;width:130px" onfocus="this.style.borderColor='var(--border)';this.style.background='var(--surface2)'" onblur="this.style.borderColor='transparent';this.style.background='transparent'"></td>
+      <td>${masterLocations.includes(e.loc)
+        ? `<select onchange="inlineEdit('${id}','loc',this.value)" style="background:transparent;border:1px solid transparent;color:var(--text);font-family:var(--mono);font-size:12px;padding:3px 4px;border-radius:4px;min-width:180px;max-width:240px" onfocus="this.style.borderColor='var(--border)';this.style.background='var(--surface2)'" onblur="this.style.borderColor='transparent';this.style.background='transparent'">${locOpts.replace('value="'+(e.loc||'').replace(/"/g,'&quot;')+'"', 'value="'+(e.loc||'').replace(/"/g,'&quot;')+'" selected')}</select>`
+        : `<input type="text" value="${(e.loc||'').replace(/"/g,'&quot;')}" onchange="inlineEdit('${id}','loc',this.value)" style="background:transparent;border:1px solid transparent;color:var(--accent);font-family:var(--mono);font-size:12px;padding:3px 4px;border-radius:4px;min-width:120px" onfocus="this.style.borderColor='var(--border)';this.style.background='var(--surface2)'" onblur="this.style.borderColor='transparent';this.style.background='transparent'">`
+      }</td>
+      <td><input type="text" value="${e.shift || ''}" maxlength="9" placeholder="0600-1400" onchange="inlineEdit('${id}','shift',this.value)" style="background:transparent;border:1px solid transparent;color:var(--text);font-family:var(--mono);font-size:12px;padding:3px 4px;border-radius:4px;width:90px" onfocus="this.style.borderColor='var(--border)';this.style.background='var(--surface2)'" onblur="this.style.borderColor='transparent';this.style.background='transparent'"></td>
+      <td><input type="number" step="0.01" value="${fmtHrs(e.hrs)}" onchange="inlineEdit('${id}','hrs',this.value)" style="background:transparent;border:1px solid transparent;color:var(--text);font-family:var(--mono);font-size:12px;padding:3px 4px;border-radius:4px;width:55px" onfocus="this.style.borderColor='var(--border)';this.style.background='var(--surface2)'" onblur="this.style.borderColor='transparent';this.style.background='transparent'"></td>
+      <td><input type="number" step="0.01" value="${Number(e.rate).toFixed(2)}" onchange="inlineEdit('${id}','rate',this.value)" style="background:transparent;border:1px solid transparent;color:var(--text);font-family:var(--mono);font-size:12px;padding:3px 4px;border-radius:4px;width:65px" onfocus="this.style.borderColor='var(--border)';this.style.background='var(--surface2)'" onblur="this.style.borderColor='transparent';this.style.background='transparent'"></td>
+      <td><select onchange="inlineEdit('${id}','desc',this.value)" style="background:transparent;border:1px solid transparent;color:var(--text);font-family:var(--mono);font-size:12px;padding:3px 4px;border-radius:4px;max-width:140px" onfocus="this.style.borderColor='var(--border)';this.style.background='var(--surface2)'" onblur="this.style.borderColor='transparent';this.style.background='transparent'">${descOpts.replace('value="'+(e.desc||'').replace(/"/g,'&quot;')+'"', 'value="'+(e.desc||'').replace(/"/g,'&quot;')+'" selected')}</select></td>
+      <td class="actions" style="white-space:nowrap">
+        <button class="btn-del" title="Delete" onclick="confirmDeleteById('${id}', this, event)">✕</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  // Quick-add row (always visible at bottom)
+  const qaShift = '';
+  const quickAddRow = `<tr data-id="quickadd" style="border-top:2px solid var(--accent);background:rgba(45,212,191,0.05)">
+    <td><input type="date" id="qaDate" value="${new Date().toISOString().slice(0,10)}" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:12px;padding:4px;border-radius:4px;width:130px"></td>
+    <td><select id="qaLoc" onchange="qaLocChange()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:12px;padding:4px;border-radius:4px;min-width:180px;max-width:240px"><option value="">Select...</option>${locOpts}</select></td>
+    <td><input type="text" id="qaShift" maxlength="9" placeholder="0600-1400" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:12px;padding:4px;border-radius:4px;width:90px" oninput="qaShiftChanged()" onblur="qaShiftAutofill(this)" onkeydown="if(event.key==='Enter'){qaShiftAutofill(this);quickAddSave()}"></td>
+    <td><input type="number" id="qaHrs" step="0.01" placeholder="8" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:12px;padding:4px;border-radius:4px;width:55px" onkeydown="if(event.key==='Enter')quickAddSave()"></td>
+    <td><input type="number" id="qaRate" step="0.01" value="${Number(defaultPayRate).toFixed(2)}" onblur="if(this.value)this.value=Number(this.value).toFixed(2)" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:12px;padding:4px;border-radius:4px;width:65px" onkeydown="if(event.key==='Enter')quickAddSave()"></td>
+    <td><select id="qaDesc" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:12px;padding:4px;border-radius:4px;max-width:140px">${descOpts}</select></td>
+    <td class="actions"><button class="btn-del" title="Add shift" onclick="quickAddSave()" style="color:var(--accent);border-color:var(--accent)">+</button></td>
+  </tr>`;
+
+  document.getElementById('entryTable').innerHTML = rows + quickAddRow;
+  document.getElementById('emptyState').style.display = 'none';
+
+  // Summary bar
+
+}
+
+function renderStatus() {
+  const pps = getPayPeriods(currentYear);
+  const last = pps[pps.length - 1];
+  if (!last) return;
+  const lastIdx = pps.length - 1;
+
+  const mobileDP = document.getElementById('mobileDeficitPill');
+
+  // Deficit pill — shows hours short (straight time) AND OT hours needed to clear it
+  const currentDeficit = getDisplayDeficit(currentYear, lastIdx); // current week only reduces, never inflates
+  const hoursShort = currentDeficit * 1.5; // straight-time gap
+  const deficitPill = document.getElementById('deficitPill');
+  if (currentDeficit === 0) {
+    deficitPill.className = 'status-pill green';
+    deficitPill.textContent = `${currentYear}: ✓ No Deficit`;
+    if (mobileDP) { mobileDP.textContent = '✓ No Deficit'; mobileDP.style.color = 'var(--green)'; }
+  } else {
+    deficitPill.className = 'status-pill red';
+    deficitPill.textContent = `Total deficit: ${hoursShort.toFixed(1)} hrs · requires ${currentDeficit.toFixed(1)} OT hrs`;
+    if (mobileDP) { mobileDP.textContent = `Total: ${hoursShort.toFixed(1)} hrs · ${currentDeficit.toFixed(1)} OT hrs`; mobileDP.style.color = 'var(--red)'; }
+  }
+}
+
+function selectPP(idx) {
+  flushQuickAdd();
+  currentPP = idx;
+  render();
+}
+
+// ============================================================
+// MODAL
+// ============================================================
+// ── PTO ──────────────────────────────────────────────────────
+function openPTOModal() {
+  const today = new Date().toISOString().slice(0,10);
+  document.getElementById('ptoDate').value = today;
+  document.getElementById('ptoHrs').value = '8';
+  document.getElementById('ptoRate').value = Number(defaultPayRate).toFixed(2);
+  document.getElementById('ptoDesc').value = 'PTO';
+  document.getElementById('ptoOverlay').classList.add('open');
+}
+
+function closePTOModal() {
+  document.getElementById('ptoOverlay').classList.remove('open');
+}
+
+function savePTO() {
+  const date = document.getElementById('ptoDate').value;
+  const hrs = parseFloat(document.getElementById('ptoHrs').value);
+  const rate = parseFloat(document.getElementById('ptoRate').value) || defaultPayRate;
+  const desc = document.getElementById('ptoDesc').value.trim() || 'PTO';
+
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) { showToast('Enter a valid date.', 'red'); return; }
+  if (!hrs || isNaN(hrs) || hrs <= 0) { showToast('Enter valid hours.', 'red'); return; }
+
+  const year = parseInt(date.slice(0,4));
+  if (!entries[year]) entries[year] = [];
+  const entry = { date, loc: '', shift: '', hrs, rate, desc, type: 'PTO', _id: 'e' + Date.now() + Math.random().toString(36).slice(2,7) };
+  entries[year].push(entry);
+  entries[year].sort((a, b) => {
+    if (a.date !== b.date) return a.date.localeCompare(b.date);
+    return ((a.shift||'').split('-')[0]||'').localeCompare((b.shift||'').split('-')[0]||'');
+  });
+
+  // Jump to the pay period containing the PTO date
+  if (year === currentYear) {
+    const ppStart = getPayPeriodStart(date);
+    const ppsAfter = getPayPeriods(currentYear);
+    const match = ppsAfter.findIndex(p => p.ppStart === ppStart);
+    if (match !== -1) currentPP = match;
+  }
+
+  closePTOModal();
+  render();
+  autosave();
+  showToast('PTO entry added ✓', 'green');
+}
+
+function openModal(prefill = null) {
+  editingIdx = null;
+  document.getElementById('modalTitle').textContent = 'ADD ENTRY';
+  populateLocationDropdown();
+  // Default date to today
+  document.getElementById('fDate').value = new Date().toISOString().slice(0,10);
+  document.getElementById('fHours').value = '';
+  document.getElementById('fShiftStart').value = '';
+  document.getElementById('fShiftEnd').value = '';
+  populateShiftDropdowns();
+  document.getElementById('fShiftStartHr').value = '';
+  document.getElementById('fShiftStartMin').value = '';
+  document.getElementById('fShiftEndHr').value = '';
+  document.getElementById('fShiftEndMin').value = '';
+  document.getElementById('fRate').value = defaultPayRate;
+  populateDescDropdown('');
+  document.getElementById('fLocOther').value = '';
+  document.getElementById('fDescOtherWrap').style.display = 'none';
+  document.getElementById('fDescOther').value = '';
+  document.getElementById('fLocOtherWrap').style.display = 'none';
+  document.getElementById('overlay').classList.add('open');
+}
+
+// Render-time entry map — rebuilt each render
+let _renderMap = {};
+let _renderKey = 0;
+
+function editByRk(rk) {
+  const e = _renderMap[rk];
+  if (!e) return;
+  const arr = entries[currentYear] || [];
+  // Find by _id if set, otherwise by matching properties
+  let idx = e._id ? arr.findIndex(x => x._id === e._id) : arr.findIndex(x => x.date === e.date && x.loc === e.loc && x.shift === e.shift && x.hrs === e.hrs && x.rate === e.rate);
+  if (idx === -1) return;
+  editingIdx = idx;
+  document.getElementById('modalTitle').textContent = 'EDIT ENTRY';
+  populateLocationDropdown(e.loc);
+  document.getElementById('fDate').value = e.date;
+  document.getElementById('fHours').value = e.hrs;
+  const sp = (e.shift || '').split('-');
+  document.getElementById('fShiftStart').value = sp[0] || '';
+  document.getElementById('fShiftEnd').value = sp[1] || '';
+  populateShiftDropdowns();
+  syncShiftDropdowns(sp[0]||'', 'fShiftStartHr', 'fShiftStartMin');
+  syncShiftDropdowns(sp[1]||'', 'fShiftEndHr', 'fShiftEndMin');
+  document.getElementById('fRate').value = e.rate;
+  populateDescDropdown(e.desc || '');
+  document.getElementById('fLocOther').value = '';
+  document.getElementById('fLocOtherWrap').style.display = 'none';
+  document.getElementById('overlay').classList.add('open');
+}
+
+function confirmDeleteByRk(rk, btn, event) {
+  event.stopPropagation();
+  if (btn.dataset.confirm === 'yes') {
+    const e = _renderMap[rk];
+    if (!e) return;
+    const arr = entries[currentYear] || [];
+    const idx = e._id ? arr.findIndex(x => x._id === e._id) : arr.findIndex(x => x.date === e.date && x.loc === e.loc && x.shift === e.shift && x.hrs === e.hrs && x.rate === e.rate);
+    if (idx !== -1) {
+      lastDeleted = { entry: arr[idx], yearKey: currentYear, idx };
+      arr.splice(idx, 1);
+      render();
+      autosave();
+      showUndoToast();
+    }
+  } else {
+    btn.dataset.confirm = 'yes';
+    btn.style.borderColor = 'var(--red)';
+    btn.style.color = 'var(--red)';
+    btn.style.background = 'rgba(255,68,102,0.15)';
+    setTimeout(() => {
+      if (btn.dataset.confirm === 'yes') {
+        btn.dataset.confirm = '';
+        btn.style.borderColor = '';
+        btn.style.color = '';
+        btn.style.background = '';
+      }
+    }, 3000);
+  }
+}
+
+// ── INLINE EDITING ───────────────────────────────────────────
+function inlineEdit(id, field, value) {
+  const arr = entries[currentYear] || [];
+  const e = arr.find(x => String(x._id) === String(id));
+  if (!e) return;
+
+  // Capture current pay period start so we don't jump
+  const ppsBefore = getPayPeriods(currentYear);
+  const viewingPPStart = (ppsBefore[currentPP] || {}).ppStart;
+
+  if (field === 'hrs' || field === 'rate') {
+    const num = parseFloat(value);
+    if (isNaN(num) || num < 0) { render(); return; }
+    e[field] = num;
+  } else if (field === 'date') {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) { render(); return; }
+    e.date = value;
+    // Date may move entry to a different year
+    const newYear = parseInt(value.slice(0,4));
+    if (newYear !== currentYear) {
+      arr.splice(arr.indexOf(e), 1);
+      if (!entries[newYear]) entries[newYear] = [];
+      entries[newYear].push(e);
+    }
+  } else if (field === 'shift') {
+    let v = value.trim();
+    // Auto-complete 4-digit start to +8hr range
+    if (/^\d{4}$/.test(v)) {
+      const sm = parseInt(v.slice(0,2))*60 + parseInt(v.slice(2,4));
+      const em2 = (sm + 480) % 1440;
+      v = v + '-' + String(Math.floor(em2/60)).padStart(2,'0') + String(em2%60).padStart(2,'0');
+    }
+    e.shift = v;
+    // Auto-calc hours from shift if valid range
+    const calc = shiftToHours(v);
+    if (calc !== null) e.hrs = calc;
+  } else {
+    e[field] = value;
+  }
+
+  // Re-sort the affected year
+  const yr = parseInt(e.date.slice(0,4));
+  if (entries[yr]) {
+    entries[yr].sort((a, b) => {
+      if (a.date !== b.date) return a.date.localeCompare(b.date);
+      return ((a.shift||'').split('-')[0]||'').localeCompare((b.shift||'').split('-')[0]||'');
+    });
+  }
+
+  // Restore the same pay period view
+  const ppsAfter = getPayPeriods(currentYear);
+  if (viewingPPStart) {
+    const match = ppsAfter.findIndex(p => p.ppStart === viewingPPStart);
+    if (match !== -1) currentPP = match;
+    else currentPP = Math.min(currentPP, ppsAfter.length - 1);
+  }
+
+  render();
+  autosave();
+}
+
+function confirmDeleteById(id, btn, event) {
+  event.stopPropagation();
+  if (btn.dataset.confirm === 'yes') {
+    const arr = entries[currentYear] || [];
+    const idx = arr.findIndex(x => String(x._id) === String(id));
+    if (idx !== -1) {
+      lastDeleted = { entry: arr[idx], yearKey: currentYear, idx };
+      arr.splice(idx, 1);
+      render();
+      autosave();
+      showUndoToast();
+    }
+  } else {
+    btn.dataset.confirm = 'yes';
+    btn.style.borderColor = 'var(--red)';
+    btn.style.color = 'var(--red)';
+    btn.style.background = 'rgba(255,68,102,0.15)';
+    setTimeout(() => {
+      if (btn.dataset.confirm === 'yes') {
+        btn.dataset.confirm = '';
+        btn.style.borderColor = '';
+        btn.style.color = '';
+        btn.style.background = '';
+      }
+    }, 3000);
+  }
+}
+
+// ── QUICK-ADD ROW ────────────────────────────────────────────
+// Exact hours from a full "HHMM-HHMM" shift (minutes included, 2 decimals). Overnight shifts supported.
+function shiftToHours(shift) {
+  const m = /^(\d{2})(\d{2})-(\d{2})(\d{2})$/.exec((shift || '').trim());
+  if (!m) return null;
+  const sh = +m[1], sm = +m[2], eh = +m[3], em = +m[4];
+  if (sh > 23 || eh > 23 || sm > 59 || em > 59) return null;
+  const s = sh * 60 + sm;
+  let e = eh * 60 + em;
+  if (e <= s) e += 1440;
+  return Math.round((e - s) / 60 * 100) / 100;
+}
+
+// Display hours: 8 -> "8.0", 2.5 -> "2.5", 2.25 -> "2.25"
+function fmtHrs(h) {
+  const r = Math.round((Number(h) || 0) * 100) / 100;
+  return Number.isInteger(Math.round(r * 10 * 1000) / 1000) ? r.toFixed(1) : r.toFixed(2);
+}
+
+function qaSetHoursFromShift() {
+  const sEl = document.getElementById('qaShift');
+  const val = sEl.value.trim();
+  // Hours were already derived from this exact shift text -> leave any manual hours edit alone
+  if (sEl.dataset.hrsFrom === val) return;
+  const h = shiftToHours(val);
+  if (h !== null) {
+    document.getElementById('qaHrs').value = h;
+    sEl.dataset.hrsFrom = val;
+  }
+}
+
+function qaLocChange() {
+  const loc = document.getElementById('qaLoc').value;
+  const typical = getTypicalShift(loc);
+  if (typical) {
+    const shiftInp = document.getElementById('qaShift');
+    if (shiftInp && !shiftInp.value) {
+      shiftInp.value = typical;
+      qaSetHoursFromShift();
+    }
+  }
+}
+
+// Fires as you type: once a full range like 1200-1400 is entered, hours update to the exact duration
+function qaShiftChanged() {
+  qaSetHoursFromShift();
+}
+
+function qaShiftAutofill(input) {
+  let v = input.value.trim();
+  // If user typed exactly 4 digits (a start time), auto-fill end +8hrs
+  if (/^\d{4}$/.test(v)) {
+    const sm = parseInt(v.slice(0,2))*60 + parseInt(v.slice(2,4));
+    const em = (sm + 480) % 1440;
+    const endH = String(Math.floor(em/60)).padStart(2,'0');
+    const endM = String(em%60).padStart(2,'0');
+    input.value = v + '-' + endH + endM;
+  }
+  qaSetHoursFromShift();
+}
+
+function flushQuickAdd() {
+  // Silently save the quick-add row if it has a valid date + location (used when navigating away)
+  const dateEl = document.getElementById('qaDate');
+  const locEl = document.getElementById('qaLoc');
+  if (!dateEl || !locEl) return false;
+  const date = dateEl.value;
+  const loc = locEl.value;
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !loc) return false; // nothing valid to save
+
+  const shiftEl = document.getElementById('qaShift');
+  let shift = shiftEl ? shiftEl.value.trim() : '';
+  // autofill 4-digit start
+  if (/^\d{4}$/.test(shift)) {
+    const sm = parseInt(shift.slice(0,2))*60 + parseInt(shift.slice(2,4));
+    const em = (sm + 480) % 1440;
+    shift = shift + '-' + String(Math.floor(em/60)).padStart(2,'0') + String(em%60).padStart(2,'0');
+  }
+  let hrs = parseFloat(document.getElementById('qaHrs').value);
+  if ((!hrs || isNaN(hrs)) && shift) {
+    const calc = shiftToHours(shift);
+    if (calc !== null) hrs = calc;
+  }
+  if (!hrs || isNaN(hrs)) return false; // can't save without hours
+
+  const rate = parseFloat(document.getElementById('qaRate').value) || defaultPayRate;
+  const desc = document.getElementById('qaDesc').value || null;
+  const year = parseInt(date.slice(0,4));
+  if (!entries[year]) entries[year] = [];
+  entries[year].push({ date, loc, shift, hrs, rate, desc, _id: 'e' + Date.now() + Math.random().toString(36).slice(2,7) });
+  entries[year].sort((a, b) => {
+    if (a.date !== b.date) return a.date.localeCompare(b.date);
+    return ((a.shift||'').split('-')[0]||'').localeCompare((b.shift||'').split('-')[0]||'');
+  });
+  autosave();
+  showToast('Pending shift saved ✓', 'green');
+  return true;
+}
+
+function quickAddSave() {
+  const date = document.getElementById('qaDate').value;
+  const loc = document.getElementById('qaLoc').value;
+  const shift = document.getElementById('qaShift').value.trim();
+  let hrs = parseFloat(document.getElementById('qaHrs').value);
+  const rate = parseFloat(document.getElementById('qaRate').value) || defaultPayRate;
+  const desc = document.getElementById('qaDesc').value || null;
+
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) { showToast('Enter a valid date.', 'red'); return; }
+  if (!loc) { showToast('Select a location.', 'red'); return; }
+
+  // Auto-calc hours from shift if blank
+  if ((!hrs || isNaN(hrs)) && shift) {
+    const calc = shiftToHours(shift);
+    if (calc !== null) hrs = calc;
+  }
+  if (!hrs || isNaN(hrs)) { showToast('Enter hours or a valid shift time.', 'red'); return; }
+
+  const year = parseInt(date.slice(0,4));
+  if (!entries[year]) entries[year] = [];
+  const entry = { date, loc, shift, hrs, rate, desc, _id: 'e' + Date.now() + Math.random().toString(36).slice(2,7) };
+  entries[year].push(entry);
+  entries[year].sort((a, b) => {
+    if (a.date !== b.date) return a.date.localeCompare(b.date);
+    return ((a.shift||'').split('-')[0]||'').localeCompare((b.shift||'').split('-')[0]||'');
+  });
+
+  // Jump to the pay period containing the new entry
+  if (year === currentYear) {
+    const entryPPStart = getPayPeriodStart(date);
+    const ppsAfter = getPayPeriods(currentYear);
+    const match = ppsAfter.findIndex(p => p.ppStart === entryPPStart);
+    if (match !== -1) currentPP = match;
+  }
+
+  render();
+  autosave();
+  showToast('Shift added ✓', 'green');
+
+  // Refocus the quick-add location for rapid entry
+  setTimeout(() => { const l = document.getElementById('qaLoc'); if (l) l.focus(); }, 50);
+}
+
+function editEntryById(eid) {
+  const arr = entries[currentYear] || [];
+  const idx = arr.findIndex(e => e._id === eid);
+  if (idx === -1) return;
+  const e = arr[idx];
+  editingIdx = idx;
+  document.getElementById('modalTitle').textContent = 'EDIT ENTRY';
+  populateLocationDropdown(e.loc);
+  document.getElementById('fDate').value = e.date;
+  document.getElementById('fHours').value = e.hrs;
+  const shiftParts = (e.shift || '').split('-');
+  document.getElementById('fShiftStart').value = shiftParts[0] || '';
+  document.getElementById('fShiftEnd').value = shiftParts[1] || '';
+  document.getElementById('fRate').value = e.rate;
+  populateDescDropdown(e.desc || '');
+  document.getElementById('fLocOther').value = '';
+  document.getElementById('fLocOtherWrap').style.display = 'none';
+  document.getElementById('overlay').classList.add('open');
+}
+
+function editEntry(globalIdx) { editEntryById(globalIdx); } // legacy
+
+function populateDescDropdown(selected) {
+  const descs = [...masterDescriptions].sort((a, b) => a.localeCompare(b));
+  const knownDescs = masterDescriptions;
+  const isOther = selected && !knownDescs.includes(selected);
+  document.getElementById('fDesc').innerHTML =
+    '<option value="">— None —</option>' +
+    descs.map(d => `<option value="${d}" ${d === selected ? 'selected' : ''}>${d}</option>`).join('') +
+    `<option value="Other" ${isOther ? 'selected' : ''}>Other</option>`;
+  document.getElementById('fDescOtherWrap').style.display = isOther ? 'block' : 'none';
+  document.getElementById('fDescOther').value = isOther ? (selected || '') : '';
+}
+
+function populateLocationDropdown(selected) {
+  const locs = [...masterLocations].sort((a, b) => a.localeCompare(b));
+  const sel = document.getElementById('fLocation');
+  const knownLocs = masterLocations;
+  const isOther = selected && !knownLocs.includes(selected);
+  const blankOpt = selected ? '' : '<option value="" disabled selected>Select location...</option>';
+  sel.innerHTML = blankOpt + locs.map(l =>
+    `<option value="${l}" ${l === selected ? 'selected' : ''}>${l}</option>`
+  ).join('') + `<option value="Other" ${isOther ? 'selected' : ''}>Other</option>`;
+  document.getElementById('fLocOtherWrap').style.display = isOther ? 'block' : 'none';
+  document.getElementById('fLocOther').value = isOther ? (selected || '') : '';
+}
+
+// Typical shift start times by location prefix (8hr shifts)
+const TYPICAL_SHIFTS = [
+  { match: 'GDIT', shift: '0600-1400' },
+  { match: 'GDMS', shift: '0700-1500' },
+  { match: 'Leidos - Edgewood', shift: '0800-1600' },
+  { match: 'Leidos Edgewood', shift: '0800-1600' },
+  { match: 'Leidos', shift: '0700-1500' },
+  { match: 'BAE', shift: '0800-1600' },
+  { match: 'Peraton', shift: '0600-1400' },
+  { match: 'Nightwing', shift: '0800-1600' }
+];
+
+function setLocationStartTime(input) {
+  const loc = input.dataset.loc.replace(/&quot;/g, '"');
+  const val = input.value.trim();
+  if (val === '') {
+    delete customShiftTimes[loc];
+  } else if (/^\d{4}$/.test(val)) {
+    customShiftTimes[loc] = val;
+  } else {
+    showToast('Enter a 4-digit time like 0600', 'red');
+    return;
+  }
+  autosave();
+}
+
+function getTypicalShift(loc) {
+  if (!loc) return null;
+  // 1. Check user-set custom time first (exact match)
+  if (customShiftTimes[loc]) {
+    const start = customShiftTimes[loc];
+    const h = parseInt(start.slice(0,2)), m = parseInt(start.slice(2,4));
+    const endMins = (h * 60 + m + 480) % 1440;
+    const endH = String(Math.floor(endMins / 60)).padStart(2,'0');
+    const endM = String(endMins % 60).padStart(2,'0');
+    return start + '-' + endH + endM;
+  }
+  // 2. Fall back to built-in prefix matches
+  for (const t of TYPICAL_SHIFTS) {
+    if (loc.toLowerCase().includes(t.match.toLowerCase())) return t.shift;
+  }
+  return null;
+}
+
+function handleLocChange() {
+  const locVal = document.getElementById('fLocation').value;
+  const isOther = locVal === 'Other';
+  document.getElementById('fLocOtherWrap').style.display = isOther ? 'block' : 'none';
+  if (!isOther) document.getElementById('fLocOther').value = '';
+
+  // Show typical shift hint
+  const hint = document.getElementById('shiftHint');
+  const typical = getTypicalShift(locVal);
+  if (typical && hint) {
+    hint.textContent = '💡 Typical: ' + typical;
+    hint.style.display = 'block';
+  } else if (hint) {
+    hint.style.display = 'none';
+  }
+}
+
+function populateShiftDropdowns() {
+  const hrs = Array.from({length:24}, (_, i) => String(i).padStart(2,'0'));
+  const mins = Array.from({length:60}, (_, i) => String(i).padStart(2,'0'));
+  ['fShiftStartHr','fShiftEndHr'].forEach(id => {
+    const sel = document.getElementById(id);
+    sel.innerHTML = '<option value="">Hr</option>' + hrs.map(h => `<option value="${h}">${h}</option>`).join('');
+  });
+  ['fShiftStartMin','fShiftEndMin'].forEach(id => {
+    const sel = document.getElementById(id);
+    sel.innerHTML = '<option value="">Min</option>' + mins.map(m => `<option value="${m}">${m}</option>`).join('');
+  });
+}
+
+function syncShiftDropdowns(val, hrId, minId) {
+  if (val && val.length === 4) {
+    const h = val.slice(0,2), m = val.slice(2,4);
+    const hrEl = document.getElementById(hrId);
+    const minEl = document.getElementById(minId);
+    if (hrEl) hrEl.value = h;
+    if (minEl) minEl.value = m;
+  }
+}
+
+function onShiftSelectChange(which) {
+  const hrId = which==='start' ? 'fShiftStartHr' : 'fShiftEndHr';
+  const minId = which==='start' ? 'fShiftStartMin' : 'fShiftEndMin';
+  const textId = which==='start' ? 'fShiftStart' : 'fShiftEnd';
+  const h = document.getElementById(hrId).value;
+  const m = document.getElementById(minId).value;
+  if (h && m) {
+    document.getElementById(textId).value = h + m;
+    if (which === 'start') {
+      // Auto-fill end if empty
+      const endField = document.getElementById('fShiftEnd');
+      if (!endField.value) {
+        const totalMins = parseInt(h)*60 + parseInt(m) + 480;
+        const eH = String(Math.floor(totalMins/60)%24).padStart(2,'0');
+        const eM = String(totalMins%60).padStart(2,'0');
+        endField.value = eH + eM;
+        syncShiftDropdowns(eH+eM, 'fShiftEndHr', 'fShiftEndMin');
+      }
+    }
+    calcHoursFromShift();
+  }
+}
+
+function onShiftEndText() {
+  const val = document.getElementById('fShiftEnd').value.trim();
+  syncShiftDropdowns(val, 'fShiftEndHr', 'fShiftEndMin');
+  calcHoursFromShift();
+}
+
+function handleShiftStart(el) {
+  syncShiftDropdowns(el.value, 'fShiftStartHr', 'fShiftStartMin');
+  if (el.value.length === 4) {
+    const endField = document.getElementById('fShiftEnd');
+    if (!endField.value) {
+      const h = parseInt(el.value.slice(0,2));
+      const m = parseInt(el.value.slice(2,4));
+      const totalMins = h * 60 + m + 480;
+      const endH = String(Math.floor(totalMins / 60) % 24).padStart(2,'0');
+      const endM = String(totalMins % 60).padStart(2,'0');
+      endField.value = endH + endM;
+      syncShiftDropdowns(endH+endM, 'fShiftEndHr', 'fShiftEndMin');
+      calcHoursFromShift();
+    }
+    endField.focus();
+  }
+  calcHoursFromShift();
+}
+
+function updateEndFromHours() {
+  const start = document.getElementById('fShiftStart').value.trim();
+  const hrs = parseFloat(document.getElementById('fHours').value);
+  if (start.length !== 4 || isNaN(hrs) || hrs <= 0) return;
+  const startMins = parseInt(start.slice(0,2)) * 60 + parseInt(start.slice(2,4));
+  const endMins = Math.round((startMins + hrs * 60)) % (24 * 60);
+  const endH = String(Math.floor(endMins / 60)).padStart(2,'0');
+  const endM = String(endMins % 60).padStart(2,'0');
+  const endVal = endH + endM;
+  document.getElementById('fShiftEnd').value = endVal;
+  syncShiftDropdowns(endVal, 'fShiftEndHr', 'fShiftEndMin');
+}
+
+function calcHoursFromShift() {
+  const start = document.getElementById('fShiftStart').value.trim();
+  const end   = document.getElementById('fShiftEnd').value.trim();
+  if (start.length !== 4 || end.length !== 4) return;
+  const startMins = parseInt(start.slice(0,2)) * 60 + parseInt(start.slice(2,4));
+  let   endMins   = parseInt(end.slice(0,2))   * 60 + parseInt(end.slice(2,4));
+  if (isNaN(startMins) || isNaN(endMins)) return;
+  if (endMins <= startMins) endMins += 24 * 60;
+  const hrs = (endMins - startMins) / 60;
+  if (hrs > 0 && hrs <= 24) {
+    document.getElementById('fHours').value = hrs % 1 === 0 ? hrs : parseFloat(hrs.toFixed(2));
+  }
+}
+
+function handleDescChange() {
+  const isOther = document.getElementById('fDesc').value === 'Other';
+  document.getElementById('fDescOtherWrap').style.display = isOther ? 'block' : 'none';
+  if (!isOther) document.getElementById('fDescOther').value = '';
+}
+
+function closeModal() {
+  document.getElementById('overlay').classList.remove('open');
+  document.getElementById('fDescOtherWrap').style.display = 'none';
+  document.getElementById('fDescOther').value = '';
+  document.getElementById('fLocOtherWrap').style.display = 'none';
+  document.getElementById('fLocOther').value = '';
+  editingIdx = null;
+}
+
+function saveEntry() {
+  const date  = document.getElementById('fDate').value;
+  const hrs   = parseFloat(document.getElementById('fHours').value);
+  const locSel = document.getElementById('fLocation').value;
+  const locOtherVal = document.getElementById('fLocOther').value.trim();
+  // If fLocOther has content, always use it (handles cases where dropdown reverted)
+  const loc = (locSel === 'Other' || locOtherVal)
+    ? (locOtherVal || null)
+    : locSel;
+  const shiftStart = document.getElementById('fShiftStart').value.trim();
+  const shiftEnd = document.getElementById('fShiftEnd').value.trim();
+  const shift = shiftStart && shiftEnd ? `${shiftStart}-${shiftEnd}` : (shiftStart || shiftEnd || '');
+  const rate  = parseFloat(document.getElementById('fRate').value);
+  const descSel = document.getElementById('fDesc').value;
+  const desc = descSel === 'Other'
+    ? (document.getElementById('fDescOther').value.trim() || null)
+    : (descSel || null);
+
+  if (!date || isNaN(hrs) || !loc || isNaN(rate)) {
+    showToast('Please fill in all required fields.', 'red');
+    return;
+  }
+
+  const entry = { date, loc, shift, hrs, rate, desc };
+
+  // Remember which pay period we're viewing (by its start date, not index)
+  const ppsBefore = getPayPeriods(currentYear);
+  const viewingPPStart = (ppsBefore[currentPP] || {}).ppStart;
+
+  // Always remove old entry first (if editing), then re-insert and re-sort
+  const arr = entries[currentYear];
+  if (editingIdx !== null) {
+    arr.splice(editingIdx, 1); // remove old entry
+  }
+  arr.push(entry); // add new entry
+  // Sort by date, then by start time within the same date
+  arr.sort((a, b) => {
+    if (a.date !== b.date) return a.date.localeCompare(b.date);
+    const aStart = (a.shift || '').split('-')[0] || '';
+    const bStart = (b.shift || '').split('-')[0] || '';
+    return aStart.localeCompare(bStart);
+  });
+
+  closeModal();
+
+  const wasEditing = editingIdx !== null;
+  ensureAllIds();
+  const ppsAfter = getPayPeriods(currentYear);
+
+  if (wasEditing && viewingPPStart) {
+    // Restore the same pay period by matching its start date
+    const match = ppsAfter.findIndex(p => p.ppStart === viewingPPStart);
+    currentPP = match !== -1 ? match : Math.min(currentPP, ppsAfter.length - 1);
+  } else {
+    // New entry — jump to the pay period containing the new entry's date
+    const entryPPStart = getPayPeriodStart(entry.date);
+    const match = ppsAfter.findIndex(p => p.ppStart === entryPPStart);
+    currentPP = match !== -1 ? match : getCurrentPP(currentYear);
+  }
+
+  render();
+  autosave();
+}
+
+let pendingDeleteId = null;
+let pendingDeleteTimer = null;
+let lastDeleted = null; // { entry, yearKey, idx, timer }
+
+function showUndoToast() {
+  let toast = document.getElementById('undoToast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'undoToast';
+    toast.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 20px;display:flex;align-items:center;gap:14px;font-family:var(--mono);font-size:12px;color:var(--text);z-index:9999;box-shadow:0 8px 30px rgba(0,0,0,0.5);transition:opacity .3s';
+    document.body.appendChild(toast);
+  }
+  toast.innerHTML = '<span>Entry deleted</span><button onclick="undoDelete()" style="background:var(--accent);color:#000;border:none;padding:5px 14px;border-radius:4px;font-family:var(--mono);font-size:12px;font-weight:600;cursor:pointer">Undo</button>';
+  toast.style.opacity = '1';
+  toast.style.display = 'flex';
+  if (lastDeleted && lastDeleted.timer) clearTimeout(lastDeleted.timer);
+  if (lastDeleted) lastDeleted.timer = setTimeout(() => {
+    toast.style.opacity = '0';
+    setTimeout(() => { toast.style.display = 'none'; lastDeleted = null; }, 300);
+  }, 5000);
+}
+
+function undoDelete() {
+  if (!lastDeleted) return;
+  clearTimeout(lastDeleted.timer);
+  const { entry, yearKey, idx } = lastDeleted;
+  lastDeleted = null;
+  const arr = entries[yearKey] || [];
+  arr.splice(idx, 0, entry);
+  const toast = document.getElementById('undoToast');
+  if (toast) { toast.style.opacity = '0'; setTimeout(() => { toast.style.display = 'none'; }, 300); }
+  render();
+  autosave();
+}
+
+function confirmDeleteEntryById(eid, btn, event) {
+  event.stopPropagation();
+  if (pendingDeleteId === eid) {
+    clearTimeout(pendingDeleteTimer);
+    pendingDeleteId = null;
+    const arr = entries[currentYear] || [];
+    const idx = arr.findIndex(e => e._id === eid);
+    if (idx !== -1) arr.splice(idx, 1);
+    render();
+  } else {
+    if (pendingDeleteId !== null) {
+      const oldBtn = document.getElementById('delbtn-' + pendingDeleteId);
+      if (oldBtn) { oldBtn.textContent = '✕'; oldBtn.style.borderColor = ''; oldBtn.style.color = ''; }
+    }
+    clearTimeout(pendingDeleteTimer);
+    pendingDeleteId = eid;
+    btn.id = 'delbtn-' + eid;
+    btn.textContent = '?';
+    btn.style.borderColor = 'var(--red)';
+    btn.style.color = 'var(--red)';
+    pendingDeleteTimer = setTimeout(() => {
+      pendingDeleteId = null;
+      if (btn) { btn.textContent = '✕'; btn.style.borderColor = ''; btn.style.color = ''; }
+    }, 3000);
+  }
+}
+
+function confirmDeleteEntry(globalIdx, btn, event) { confirmDeleteEntryById(globalIdx, btn, event); } // legacy
+
+function deleteEntry(globalIdx) {
+  entries[currentYear].splice(globalIdx, 1);
+  render();
+}
+
+// Close overlay on bg click
+document.getElementById('overlay').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+document.getElementById('ptoOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closePTOModal();
+});
+
+// ============================================================
+// SETTINGS
+// ============================================================
+let settingsSnapshot = null;
+
+function openSettings() {
+  // Snapshot current state for undo
+  locRenameLog = [];
+  settingsSnapshot = {
+    masterLocations: [...masterLocations],
+    masterDescriptions: [...masterDescriptions],
+    taxRate,
+    deductionRate,
+    hideNetPay,
+    defaultPayRate,
+    entryYears: Object.keys(entries)
+  };
+  renderSettingsLists();
+  document.getElementById('defaultPayRateInput').value = defaultPayRate;
+  document.getElementById('taxRateInput').value = taxRate;
+  // Backup reminder
+  const brt = document.getElementById('backupReminderToggle');
+  const brth = document.getElementById('backupReminderThumb');
+  if (brt) { brt.style.background = backupReminderEnabled ? 'var(--accent)' : 'var(--border)'; brth.style.left = backupReminderEnabled ? '18px' : '2px'; }
+  const bri = document.getElementById('backupReminderInterval');
+  if (bri) bri.value = backupReminderDays;
+  document.getElementById('deductionRateInput').value = deductionRate || '';
+  const toggle = document.getElementById('privacyToggle');
+  const thumb = document.getElementById('privacyThumb');
+  toggle.style.background = hideNetPay ? 'var(--accent)' : 'var(--border)';
+  thumb.style.left = hideNetPay ? '18px' : '2px';
+  document.getElementById('settingsOverlay').classList.add('open');
+}
+
+function undoSettings() {
+  if (!settingsSnapshot) return;
+  // Reverse any location renames (restores entry names too)
+  while (locRenameLog.length) { const r = locRenameLog.pop(); applyLocationRename(r.to, r.from); }
+  masterLocations = [...settingsSnapshot.masterLocations];
+  masterDescriptions = [...settingsSnapshot.masterDescriptions];
+  if (settingsSnapshot.defaultPayRate) defaultPayRate = settingsSnapshot.defaultPayRate;
+  taxRate = settingsSnapshot.taxRate;
+  deductionRate = settingsSnapshot.deductionRate;
+  hideNetPay = settingsSnapshot.hideNetPay;
+  document.getElementById('defaultPayRateInput').value = defaultPayRate;
+  document.getElementById('taxRateInput').value = taxRate;
+  document.getElementById('deductionRateInput').value = deductionRate || '';
+  const toggle = document.getElementById('privacyToggle');
+  const thumb = document.getElementById('privacyThumb');
+  toggle.style.background = hideNetPay ? 'var(--accent)' : 'var(--border)';
+  thumb.style.left = hideNetPay ? '18px' : '2px';
+  // Restore deleted years (re-add empty entries object for any missing year)
+  if (settingsSnapshot.entryYears) {
+    settingsSnapshot.entryYears.forEach(y => {
+      const key = isNaN(y) ? y : Number(y);
+      if (!entries[key]) entries[key] = [];
+    });
+  }
+  renderYearTabs();
+  renderSettingsLists();
+  renderContent();
+}
+
+function closeSettings() {
+  const pr = parseFloat(document.getElementById('defaultPayRateInput').value);
+  if (!isNaN(pr) && pr > 0) defaultPayRate = pr;
+  const t = parseFloat(document.getElementById('taxRateInput').value);
+  if (!isNaN(t) && t >= 0 && t <= 100) taxRate = t;
+  const d = parseFloat(document.getElementById('deductionRateInput').value);
+  if (!isNaN(d) && d >= 0 && d <= 100) deductionRate = d;
+  const bri = document.getElementById('backupReminderInterval');
+  if (bri) backupReminderDays = parseInt(bri.value);
+  document.getElementById('settingsOverlay').classList.remove('open');
+  document.getElementById('newLocInput').value = '';
+  document.getElementById('newDescInput').value = '';
+  renderContent();
+  autosave();
+}
+
+function toggleHideNetPay() {
+  hideNetPay = !hideNetPay;
+  const toggle = document.getElementById('privacyToggle');
+  const thumb = document.getElementById('privacyThumb');
+  toggle.style.background = hideNetPay ? 'var(--accent)' : 'var(--border)';
+  thumb.style.left = hideNetPay ? '18px' : '2px';
+  renderContent();
+  autosave();
+}
+
+function clearAllData() {
+  const confirmed = confirm(
+    'WARNING: This will permanently delete ALL entries and years.\n\n' +
+    'Your locations, descriptions, and settings will be kept.\n\n' +
+    'This cannot be undone. Are you sure?'
+  );
+  if (!confirmed) return;
+  // Wipe all entries and years
+  Object.keys(entries).forEach(y => delete entries[y]);
+  // Start fresh with current calendar year
+  const thisYear = new Date().getFullYear();
+  entries[thisYear] = [];
+  currentYear = thisYear;
+  sidebarMonth = 'ALL';
+  currentPP = 0;
+  // Wipe ALL timekeeping localStorage keys to prevent old data loading
+  Object.keys(localStorage).filter(k => k.startsWith('timekeeping_')).forEach(k => localStorage.removeItem(k));
+  autosave();
+  closeSettings();
+  renderYearTabs();
+  render();
+  showToast('All entries cleared. Locations and settings kept.', 'green');
+}
+
+function renderSettingsLists() {
+  // Years
+  const years = Object.keys(entries).sort((a,b) => { if(a==='NEW')return 1; if(b==='NEW')return -1; return Number(a)-Number(b); });
+  document.getElementById('yearDeleteList').innerHTML = years.map(yr =>
+    '<div style="display:flex;align-items:center;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:5px 10px;flex-shrink:0">'
+    + '<span style="font-family:var(--mono);font-size:12px;font-weight:600;color:var(--text)">' + yr + '</span>'
+    + (years.length > 1
+        ? '<button class="btn-del" id="delyr-' + yr + '" onclick="confirmDeleteYear(\'' + yr + '\', this)">✕</button>'
+        : '<span style="font-size:10px;color:var(--muted);font-family:var(--mono)">(only year)</span>')
+    + '</div>'
+  ).join('');
+  setTimeout(() => {
+    const ydl = document.getElementById('yearDeleteList');
+    const hasOverflow = ydl.scrollWidth > ydl.clientWidth;
+    document.getElementById('yearListScrollLeft').style.opacity = hasOverflow && ydl.scrollLeft > 0 ? '1' : '0.2';
+    document.getElementById('yearListScrollRight').style.opacity = hasOverflow ? '1' : '0.2';
+  }, 0);
+
+  // Locations with editable typical start time
+  const locSorted = [...masterLocations].sort((a,b) => a.localeCompare(b));
+  document.getElementById('locList').innerHTML = locSorted.map(function(l) {
+    const safeL = l.replace(/"/g, '&quot;');
+    const typical = customShiftTimes[l] || '';
+    const escL = l.replace(/'/g, "\\'");
+    return '<div style="display:flex;align-items:center;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:6px 10px">'
+      + '<input type="text" value="' + safeL + '" data-loc="' + safeL + '" onchange="renameLocation(this)" title="Edit name — existing entries update automatically" style="flex:1;min-width:0;font-family:var(--mono);font-size:12px;color:var(--text);background:transparent;border:1px solid transparent;border-radius:4px;padding:3px 4px;outline:none" onfocus="this.style.borderColor=\'var(--border)\';this.style.background=\'var(--surface)\'" onblur="this.style.borderColor=\'transparent\';this.style.background=\'transparent\'">'
+      + '<input type="text" maxlength="4" inputmode="numeric" placeholder="Start" value="' + typical + '" data-loc="' + safeL + '" onchange="setLocationStartTime(this)" title="Typical start time (e.g. 0600)" style="width:54px;font-family:var(--mono);font-size:11px;background:var(--surface);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:3px 6px;text-align:center;outline:none">'
+      + '<button class="btn-del" onclick="removeLocation(\'' + escL + '\')">&times;</button>'
+      + '</div>';
+  }).join('');
+
+  // Descriptions — draggable, user-defined order
+  const descEl = document.getElementById('descList');
+  descEl.innerHTML = '';
+  masterDescriptions.forEach(function(d, i) {
+    const div = document.createElement('div');
+    div.draggable = true;
+    div.dataset.idx = i;
+    div.style.cssText = 'display:flex;align-items:center;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:6px 10px;cursor:grab;user-select:none';
+    div.innerHTML = '<span style="color:var(--muted);font-size:18px;flex-shrink:0;line-height:1">&#8942;</span>'
+      + '<span style="font-family:var(--mono);font-size:12px;color:var(--text);flex:1">' + d + '</span>'
+      + '<button class="btn-del" data-desc="' + d.replace(/"/g,'&quot;') + '">&times;</button>';
+    div.querySelector('.btn-del').addEventListener('click', function(e) {
+      e.stopPropagation();
+      removeDescription(this.dataset.desc);
+    });
+    div.addEventListener('dragstart', function(e) { _descDragSrc = i; e.dataTransfer.effectAllowed='move'; div.style.opacity='0.4'; });
+    div.addEventListener('dragover', function(e) { e.preventDefault(); div.style.borderColor='var(--accent)'; });
+    div.addEventListener('dragleave', function() { div.style.borderColor='var(--border)'; });
+    div.addEventListener('drop', function(e) {
+      e.preventDefault(); div.style.borderColor='var(--border)';
+      if (_descDragSrc===null || _descDragSrc===i) return;
+      var moved = masterDescriptions.splice(_descDragSrc,1)[0];
+      masterDescriptions.splice(i,0,moved);
+      renderSettingsLists();
+    });
+    div.addEventListener('dragend', function() { _descDragSrc=null; div.style.opacity='1'; });
+    descEl.appendChild(div);
+  });
+}
+
+var _descDragSrc = null;
+
+
+function addLocation() {
+  const val = document.getElementById('newLocInput').value.trim();
+  if (!val || masterLocations.includes(val)) return;
+  masterLocations.push(val);
+  document.getElementById('newLocInput').value = '';
+  renderSettingsLists();
+  autosave();
+}
+
+let locRenameLog = []; // renames made during this Settings session (for Undo)
+
+function applyLocationRename(oldName, newName) {
+  const i = masterLocations.indexOf(oldName);
+  if (i !== -1) masterLocations[i] = newName;
+  Object.keys(entries).forEach(y => {
+    (entries[y] || []).forEach(e => { if (e.loc === oldName) e.loc = newName; });
+  });
+  if (customShiftTimes[oldName]) {
+    customShiftTimes[newName] = customShiftTimes[oldName];
+    delete customShiftTimes[oldName];
+  }
+}
+
+function renameLocation(input) {
+  const oldName = input.dataset.loc.replace(/&quot;/g, '"');
+  const newName = input.value.trim();
+  if (!newName || newName === oldName) { renderSettingsLists(); return; }
+  if (masterLocations.some(l => l.toLowerCase() === newName.toLowerCase() && l !== oldName)) {
+    showToast('That location name already exists.', 'red');
+    renderSettingsLists();
+    return;
+  }
+  applyLocationRename(oldName, newName);
+  locRenameLog.push({ from: oldName, to: newName });
+  renderSettingsLists();
+  render();
+  autosave();
+  showToast('Renamed — existing entries updated ✓', 'green');
+}
+
+function removeLocation(loc) {
+  masterLocations = masterLocations.filter(l => l !== loc);
+  renderSettingsLists();
+  autosave();
+}
+
+function addDescription() {
+  const val = document.getElementById('newDescInput').value.trim();
+  if (!val || masterDescriptions.includes(val)) return;
+  masterDescriptions.push(val);
+  document.getElementById('newDescInput').value = '';
+  renderSettingsLists();
+  autosave();
+}
+
+function removeDescription(desc) {
+  masterDescriptions = masterDescriptions.filter(d => d !== desc);
+  renderSettingsLists();
+  autosave();
+}
+
+// Close settings on bg click
+document.getElementById('settingsOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closeSettings();
+});
+
+// ============================================================
+// EXPORT
+// ============================================================
+function openExport() {
+  document.getElementById('exportYearLabel').textContent = currentYear;
+  // Populate year select
+  const sel = document.getElementById('exportYearSelect');
+  sel.innerHTML = Object.keys(entries).map(Number).sort((a,b)=>a-b).map(y =>
+    `<option value="${y}" ${y===currentYear?'selected':''}>${y}</option>`
+  ).join('');
+  renderExportMonthCheckboxes();
+  updateExportMonths();
+  document.getElementById('exportOverlay').classList.add('open');
+}
+
+function closeExport() {
+  document.getElementById('exportOverlay').classList.remove('open');
+}
+
+function updateExportMonths() {
+  const scope = document.querySelector('input[name="exportScope"]:checked').value;
+  document.getElementById('exportMonthPicker').style.display = scope === 'months' ? 'block' : 'none';
+}
+
+function renderExportMonthCheckboxes() {
+  const year = parseInt(document.getElementById('exportYearSelect').value);
+  const pps = getPayPeriods(year);
+  const monthSet = new Set();
+  pps.forEach(pp => { if (pp.entries.length > 0) monthSet.add(pp.entries[0].date.slice(0,7)); });
+  const months = [...monthSet].sort();
+  const MN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  document.getElementById('exportMonthCheckboxes').innerHTML = months.map(m => {
+    const label = MN[parseInt(m.split('-')[1])-1];
+    return `<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--text);background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:4px 10px">
+      <input type="checkbox" value="${m}" style="accent-color:var(--accent)"> ${label}
+    </label>`;
+  }).join('');
+}
+
+function getExportEntries() {
+  const scope = document.querySelector('input[name="exportScope"]:checked').value;
+  let result = [];
+  if (scope === 'all') {
+    Object.keys(entries).map(Number).sort((a,b)=>a-b).forEach(y => {
+      (entries[y]||[]).forEach(e => result.push({...e, year: y}));
+    });
+  } else if (scope === 'year') {
+    (entries[currentYear]||[]).forEach(e => result.push({...e, year: currentYear}));
+  } else {
+    const year = parseInt(document.getElementById('exportYearSelect').value);
+    const checked = [...document.querySelectorAll('#exportMonthCheckboxes input:checked')].map(i => i.value);
+    (entries[year]||[]).filter(e => checked.includes(e.date.slice(0,7))).forEach(e => result.push({...e, year}));
+  }
+  return result;
+}
+
+function doExport(fmt) {
+  const exportEntries = getExportEntries();
+  if (exportEntries.length === 0) { showToast('No entries to export.', 'red'); return; }
+  if (fmt === 'xlsx') exportXlsx(exportEntries);
+  else if (fmt === 'pdf') exportPdf(exportEntries);
+  else exportPrint(exportEntries);
+}
+
+function exportXlsx(data) {
+  // Group by year, build CSV-style then trigger download as Excel-compatible TSV
+  const years = [...new Set(data.map(e => e.year))].sort();
+  let wb = '';
+  years.forEach(y => {
+    const yearData = data.filter(e => e.year === y);
+    const pps = getPayPeriods(y);
+    wb += 'YEAR: ' + y + '\n';
+    wb += 'Date\tLocation\tShift\tHours\tRate\tEarnings\tDescription\n';
+    // Group by pay period
+    pps.forEach((pp, i) => {
+      const ppEntries = pp.entries.filter(e => yearData.some(d => d.date === e.date && d.loc === e.loc && d.shift === e.shift));
+      if (ppEntries.length === 0) return;
+      ppEntries.forEach(e => {
+        const earn = (Number(e.hrs) * Number(e.rate)).toFixed(2);
+        wb += `${e.date}\t${e.loc}\t${e.shift||''}\t${Number(e.hrs).toFixed(2)}\t$${Number(e.rate).toFixed(2)}\t$${earn}\t${e.desc||''}\n`;
+      });
+      wb += `Pay Period ${i+1} Total\t\t\t${pp.totalHrs.toFixed(2)}\t\t$${pp.totalEarn.toFixed(2)}\t${pp.needed===0?'OT: +'+pp.ot.toFixed(2)+'h':'Short: -'+pp.needed.toFixed(2)+'h'}\n`;
+      wb += '\n';
+    });
+    wb += '\n';
+  });
+  const blob = new Blob([wb.replace(/\t/g, ',')], {type: 'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'timekeeping_export.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+function buildReportHtml(data, autoPrint) {
+  const years = [...new Set(data.map(e => e.year))].sort();
+  const MN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  let html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Timekeeping Report</title>
+  <style>
+    body{font-family:'Courier New',monospace;font-size:11px;color:#000;margin:20px;}
+    h1{font-size:18px;margin-bottom:4px;}
+    h2{font-size:14px;margin:16px 0 6px;border-bottom:2px solid #000;padding-bottom:2px;}
+    h3{font-size:11px;margin:12px 0 4px;color:#444;background:#f0f0f0;padding:3px 6px;}
+    table{width:100%;border-collapse:collapse;margin-bottom:8px;}
+    th{background:#222;color:#fff;padding:4px 8px;text-align:left;font-size:10px;}
+    td{padding:3px 8px;border-bottom:1px solid #ddd;font-size:10px;}
+    .total-row{background:#f5f5f5;font-weight:bold;}
+    .ot{color:green;}.short{color:red;}
+    .deficit-row{background:#fff3cd;}
+    @media print{body{margin:10px;}}
+  </style></head><body>
+  <h1>TIMEKEEPING REPORT</h1>
+  <p style="color:#666;margin-bottom:16px">Generated: ${new Date().toLocaleDateString()}</p>`;
+  years.forEach(y => {
+    const pps = getPayPeriods(y);
+    const yearEntries = data.filter(e => e.year === y);
+    if (yearEntries.length === 0) return;
+    const yearTotal = yearEntries.reduce((s,e) => s+Number(e.hrs), 0);
+    const yearEarn = yearEntries.reduce((s,e) => s+Number(e.hrs)*Number(e.rate), 0);
+    html += `<h2>${y} - ${yearTotal.toFixed(1)} hrs - $${yearEarn.toFixed(2)} gross</h2>`;
+    let runningDeficit = 0;
+    pps.forEach((pp, i) => {
+      const ppDates = new Set(yearEntries.map(e => e.date+e.loc+e.shift));
+      const ppEntries = pp.entries.filter(e => ppDates.has(e.date+e.loc+e.shift));
+      if (ppEntries.length === 0) return;
+      const priorDef = runningDeficit;
+      const target = 40 + priorDef * 1.5;
+      const needed = Math.max(0, target - pp.totalHrs);
+      const ot = Math.max(0, pp.totalHrs - target);
+      if (pp.totalHrs < 40) runningDeficit += (40 - pp.totalHrs) / 1.5;
+      else if (pp.totalHrs > 40 && runningDeficit > 0) runningDeficit = Math.max(0, runningDeficit - (pp.totalHrs - 40));
+      const ppMonth = pp.entries[0]?.date?.slice(0,7);
+      const monthName = ppMonth ? MN[parseInt(ppMonth.split('-')[1])-1] : '';
+      html += `<h3>PP ${i+1} | ${pp.dateRange} | ${monthName}</h3>`;
+      html += `<table><thead><tr><th>Date</th><th>Location</th><th>Shift</th><th>Hours</th><th>Rate</th><th>Description</th></tr></thead><tbody>`;
+      ppEntries.forEach(e => {
+        html += `<tr><td>${e.date}</td><td>${e.loc}</td><td>${e.shift||''}</td><td>${fmtHrs(e.hrs)}</td><td>$${Number(e.rate).toFixed(2)}</td><td>${e.desc||''}</td></tr>`;
+      });
+      const sc = needed===0?'ot':'short';
+      const st = needed===0?`OT: +${ot.toFixed(1)}h`:`Short: -${needed.toFixed(1)}h`;
+      html += `<tr class="total-row"><td colspan="3"><b>PP ${i+1} Total</b></td><td><b>${fmtHrs(pp.totalHrs)}</b></td><td></td><td class="${sc}"><b>${st}</b></td></tr>`;
+      if (priorDef > 0) html += `<tr class="deficit-row"><td colspan="7">Deficit carried in: ${priorDef.toFixed(1)} OT hrs - Target: ${target.toFixed(1)} hrs</td></tr>`;
+      html += `</tbody></table>`;
+    });
+  });
+  html += `<div style="position:sticky;top:0;background:#111;padding:8px 16px;display:flex;gap:10px;align-items:center;z-index:999"><span style="color:#00e5ff;font-family:monospace;font-weight:600">TIMEKEEPING REPORT</span><button onclick="window.print()" style="margin-left:auto;background:#00e5ff;color:#000;border:none;padding:6px 16px;border-radius:4px;font-family:monospace;font-weight:600;cursor:pointer">Print / Save PDF</button></div>`;
+  html += `</body></html>`;
+  return html;
+}
+
+function exportPdf(data) {
+  openReport(buildReportHtml(data));
+}
+
+function exportPrint(data) {
+  openReport(buildReportHtml(data));
+}
+
+function openReport(html) {
+  const blob = new Blob([html], {type: 'text/html'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.target = '_blank';
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+function printInIframe(html) {
+  const printBar = `<div style="position:sticky;top:0;background:#222;padding:10px 20px;display:flex;align-items:center;gap:12px;z-index:999;border-bottom:2px solid #00e5ff">
+    <span style="color:#00e5ff;font-family:monospace;font-weight:600;font-size:14px">TIMEKEEPING REPORT</span>
+    <button onclick="window.print()" style="background:#00e5ff;color:#000;border:none;padding:7px 18px;border-radius:5px;font-family:monospace;font-weight:600;font-size:13px;cursor:pointer;margin-left:auto">&#128438; Print / Save as PDF</button>
+    <button onclick="window.close()" style="background:transparent;color:#aaa;border:1px solid #555;padding:7px 14px;border-radius:5px;font-family:monospace;font-size:12px;cursor:pointer">Close</button>
+  </div>
+  <style>@media print { .no-print { display:none!important; } }</style>
+  <div class="no-print" id="topbar"></div>`;
+  const finalHtml = html.replace('<body>', '<body>' + printBar);
+  const blob = new Blob([finalHtml], {type: 'text/html'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'timekeeping_report.html';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+document.getElementById('exportOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closeExport();
+});
+
+// ============================================================
+// BACKUP & RESTORE
+// ============================================================
+
+function getExportData() {
+  return JSON.stringify({ entries, masterLocations, masterDescriptions, taxRate, deductionRate, hideNetPay, defaultPayRate, customShiftTimes, exportedAt: new Date().toISOString() }, null, 2);
+}
+
+function importData(json) {
+  try {
+    const d = JSON.parse(json);
+    if (d.entries) {
+      Object.keys(d.entries).forEach(y => { entries[y] = d.entries[y]; });
+    }
+    if (d.masterLocations) masterLocations = d.masterLocations;
+    if (d.masterDescriptions) masterDescriptions = d.masterDescriptions;
+    if (typeof d.taxRate === 'number') taxRate = d.taxRate;
+    if (typeof d.deductionRate === 'number') deductionRate = d.deductionRate;
+    if (typeof d.hideNetPay === 'boolean') hideNetPay = d.hideNetPay;
+    ensureAllIds();
+    renderYearTabs();
+    setYear(currentYear);
+    autosave();
+    showToast('Data restored from file ✓', 'green');
+  } catch(e) {
+    showToast('Import error: ' + e.message, 'red');
+  }
+}
+
+function showToast(msg, color) {
+  let t = document.getElementById('syncToast');
+  if (!t) { t = document.createElement('div'); t.id = 'syncToast'; document.body.appendChild(t); }
+  t.style.cssText = `position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surface);border:2px solid var(--${color === 'green' ? 'green' : 'red'});border-radius:8px;padding:10px 20px;font-family:var(--mono);font-size:12px;color:var(--${color === 'green' ? 'green' : 'red'});z-index:99999;box-shadow:0 8px 30px rgba(0,0,0,0.5)`;
+  t.textContent = msg;
+  t.style.display = 'block';
+  t.style.opacity = '1';
+  setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.style.display = 'none', 300); }, 3000);
+}
+
+function openSync() {
+  updateSyncUI();
+  openSync_loadGeminiKey();
+  document.getElementById('gdriveClientIdInput').value = GDRIVE_CLIENT_ID_VAR;
+  document.getElementById('msalClientIdInput').value = MSAL_CLIENT_ID_VAR;
+  document.getElementById('syncOverlay').classList.add('open');
+}
+function closeSync() { document.getElementById('syncOverlay').classList.remove('open'); }
+
+function toggleSection(id) {
+  const el = document.getElementById(id);
+  const icon = document.getElementById(id + 'Icon');
+  const open = el.style.display === 'none' || el.style.display === '';
+  el.style.display = open ? 'block' : 'none';
+  if (icon) icon.innerHTML = open ? '&#8249;' : '&#8250;';
+}
+
+// ── GEMINI AI IMPORT ─────────────────────────────────────────
+let geminiApiKeyVal = localStorage.getItem('gemini_api_key') || '';
+
+function saveGeminiKey() {
+  const val = document.getElementById('geminiApiKey').value.trim();
+  if (val) {
+    geminiApiKeyVal = val;
+    localStorage.setItem('gemini_api_key', val);
+    showToast('Gemini API key saved!', 'green');
+  }
+}
+
+function openSync_loadGeminiKey() {
+  const inp = document.getElementById('geminiApiKey');
+  if (inp && geminiApiKeyVal) inp.value = geminiApiKeyVal;
+}
+
+// ── DICTATION ────────────────────────────────────────────────
+let recognition = null;
+let isListening = false;
+
+function toggleDictation() {
+  const btn = document.getElementById('micBtn');
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    showToast('Speech recognition not supported in this browser.', 'red');
+    return;
+  }
+  if (isListening) {
+    recognition.stop();
+    return;
+  }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SR();
+  recognition.lang = 'en-US';
+  recognition.continuous = true;
+  recognition.interimResults = true;
+
+  recognition.onstart = function() {
+    isListening = true;
+    btn.style.color = 'var(--red)';
+    btn.style.borderColor = 'var(--red)';
+    btn.innerHTML = '&#9209;'; // stop icon
+    btn.title = 'Tap to stop dictation';
+  };
+
+  recognition.onresult = function(e) {
+    let transcript = '';
+    for (let i = 0; i < e.results.length; i++) {
+      transcript += e.results[i][0].transcript;
+    }
+    document.getElementById('geminiInput').value = transcript;
+  };
+
+  recognition.onend = function() {
+    isListening = false;
+    btn.style.color = 'var(--muted)';
+    btn.style.borderColor = 'var(--border)';
+    btn.innerHTML = '&#127908;';
+    btn.title = 'Dictate shifts';
+  };
+
+  recognition.onerror = function(e) {
+    isListening = false;
+    btn.style.color = 'var(--muted)';
+    btn.style.borderColor = 'var(--border)';
+    btn.innerHTML = '&#127908;';
+    if (e.error !== 'aborted') showToast('Microphone error: ' + e.error, 'red');
+  };
+
+  recognition.start();
+}
+
+async function geminiImport() {
+  if (!geminiApiKeyVal) {
+    showToast('Please enter and save your Gemini API key first.', 'red');
+    return;
+  }
+  const text = document.getElementById('geminiInput').value.trim();
+  if (!text) { showToast('Please describe your shifts first.', 'red'); return; }
+
+  const btn = document.getElementById('geminiImportBtn');
+  const resultEl = document.getElementById('geminiResult');
+  btn.textContent = '⏳ Parsing...';
+  btn.disabled = true;
+  resultEl.style.display = 'none';
+
+  const today = new Date().toISOString().slice(0,10);
+  const prompt = `You are a shift parser for a timekeeping app. Parse the following shift description and return ONLY a JSON array of shift objects. No explanation, no markdown, just raw JSON.
+
+Each object must have these fields:
+- date: string in YYYY-MM-DD format
+- loc: string (location name)
+- shift: string in HHMM-HHMM format (24hr, e.g. "1400-2200")
+- hrs: number (hours worked, calculate from shift if not stated)
+- rate: number (hourly pay rate, use 26 if not stated)
+- desc: null or string (description if mentioned)
+
+Today's date is ${today}. Use this to resolve relative dates like "Monday" or "next week".
+
+Known locations for reference (use closest match): ${masterLocations.slice(0,10).join(', ')}
+
+Shift description to parse:
+"${text}"
+
+Return only the JSON array, nothing else.`;
+
+  try {
+    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + geminiApiKeyVal, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.1 }
+      })
+    });
+
+    const data = await res.json();
+    if (data.error) throw new Error(data.error.message);
+
+    let raw = data.candidates[0].content.parts[0].text.trim();
+    // Strip markdown if present
+    raw = raw.replace(/^```json\n?/, '').replace(/\n?```$/, '').trim();
+
+    const shifts = JSON.parse(raw);
+    if (!Array.isArray(shifts) || shifts.length === 0) throw new Error('No shifts parsed');
+
+    let added = 0;
+    shifts.forEach(s => {
+      const year = parseInt((s.date || '').slice(0,4));
+      if (!year || isNaN(year)) return;
+      if (!entries[year]) entries[year] = [];
+      entries[year].push({ date: s.date, loc: s.loc || '', shift: s.shift || '', hrs: Number(s.hrs) || 0, rate: Number(s.rate) || defaultPayRate, desc: s.desc || null });
+      entries[year].sort((a, b) => {
+        if (a.date !== b.date) return a.date.localeCompare(b.date);
+        return ((a.shift||'').split('-')[0]||'').localeCompare((b.shift||'').split('-')[0]||'');
+      });
+      added++;
+    });
+
+    ensureAllIds();
+    renderYearTabs();
+    setYear(currentYear);
+    autosave();
+
+    resultEl.style.display = 'block';
+    resultEl.style.color = 'var(--green)';
+    resultEl.textContent = '✓ ' + added + ' shift' + (added===1?'':'s') + ' imported successfully!';
+    document.getElementById('geminiInput').value = '';
+
+  } catch(e) {
+    resultEl.style.display = 'block';
+    resultEl.style.color = 'var(--red)';
+    resultEl.textContent = '✗ Error: ' + e.message;
+  } finally {
+    btn.textContent = '🤖 Parse & Import with AI';
+    btn.disabled = false;
+  }
+}
+
+function processBulkImport() {
+  const raw = document.getElementById('bulkImportText').value.trim();
+  const resultEl = document.getElementById('bulkImportResult');
+  if (!raw) { resultEl.style.display='none'; return; }
+
+  const lines = raw.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+  let added = 0, skipped = 0, errors = [];
+
+  lines.forEach((line, i) => {
+    const parts = line.split('|').map(p => p.trim());
+    if (parts.length < 3) { errors.push('Line ' + (i+1) + ': need at least DATE | LOCATION | SHIFT'); skipped++; return; }
+
+    const date = parts[0];
+    const loc = parts[1];
+    const shift = parts[2];
+    let hrs = parts[3] ? parseFloat(parts[3]) : null;
+    const rate = parts[4] ? parseFloat(parts[4]) : defaultPayRate;
+
+    // Validate date format
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { errors.push('Line ' + (i+1) + ': invalid date "' + date + '" — use YYYY-MM-DD'); skipped++; return; }
+    if (!loc) { errors.push('Line ' + (i+1) + ': missing location'); skipped++; return; }
+
+    // Auto-calculate hours from shift if not provided
+    if (!hrs || isNaN(hrs)) {
+      const sp = shift.split('-');
+      if (sp.length === 2) {
+        const toMins = t => { t = t.trim(); if (t.length === 3) t = '0'+t; return parseInt(t.slice(0,2))*60+parseInt(t.slice(2,4)); };
+        let sm = toMins(sp[0]), em = toMins(sp[1]);
+        if (em <= sm) em += 1440;
+        hrs = Math.round((em - sm) / 60 * 100) / 100;
+      } else { hrs = 0; }
+    }
+
+    const year = parseInt(date.slice(0,4));
+    if (!entries[year]) entries[year] = [];
+    entries[year].push({ date, loc, shift, hrs, rate, desc: null });
+
+    // Sort after adding
+    entries[year].sort((a, b) => {
+      if (a.date !== b.date) return a.date.localeCompare(b.date);
+      const aS = (a.shift||'').split('-')[0]||'';
+      const bS = (b.shift||'').split('-')[0]||'';
+      return aS.localeCompare(bS);
+    });
+    added++;
+  });
+
+  ensureAllIds();
+  renderYearTabs();
+  setYear(currentYear);
+  autosave();
+
+  resultEl.style.display = 'block';
+  if (added > 0 && errors.length === 0) {
+    resultEl.style.color = 'var(--green)';
+    resultEl.textContent = '✓ ' + added + ' shift' + (added===1?'':'s') + ' imported successfully!';
+    document.getElementById('bulkImportText').value = '';
+  } else if (added > 0) {
+    resultEl.style.color = 'var(--yellow)';
+    resultEl.textContent = '⚠ ' + added + ' imported, ' + skipped + ' skipped. ' + errors.join(' | ');
+  } else {
+    resultEl.style.color = 'var(--red)';
+    resultEl.textContent = '✗ ' + errors.join(' | ');
+  }
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const so = document.getElementById('syncOverlay');
+  if (so) so.addEventListener('click', e => { if (e.target === so) closeSync(); });
+});
+
+// ── LOCAL ────────────────────────────────────────────────────
+function localBackup() {
+  markBackupDone();
+  const blob = new Blob([getExportData()], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'timekeeping_data.json';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  showToast('JSON exported!', 'green');
+}
+
+function localRestore(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const parsed = JSON.parse(e.target.result);
+      importData(JSON.stringify(parsed));
+    } catch(err) {
+      showToast('Invalid JSON file — could not parse.', 'red');
+    }
+  };
+  reader.readAsText(file);
+  event.target.value = '';
+}
+
+// ── GOOGLE DRIVE ─────────────────────────────────────────────
+let GDRIVE_CLIENT_ID_VAR = localStorage.getItem('gdrive_client_id') || '';
+const GDRIVE_CLIENT_ID = '';
+
+const GDRIVE_SCOPES = 'https://www.googleapis.com/auth/drive.appdata';
+let gdriveToken = null;
+const GDRIVE_FILE_NAME = 'timekeeping_data.json';
+
+function updateSyncUI() {
+  // Google Drive
+  const connected = !!gdriveToken;
+  document.getElementById('gdriveStatus').textContent = connected ? '✓ Connected' : 'Not connected';
+  document.getElementById('gdriveStatus').style.color = connected ? 'var(--green)' : 'var(--muted)';
+  document.getElementById('gdriveConnectBtn').style.display = connected ? 'none' : 'flex';
+  document.getElementById('gdriveBackupBtn').style.display = connected ? 'flex' : 'none';
+  document.getElementById('gdriveRestoreBtn').style.display = connected ? 'flex' : 'none';
+  document.getElementById('gdriveDisconnectBtn').style.display = connected ? 'flex' : 'none';
+  // OneDrive
+  const msConnected = !!msalToken;
+  document.getElementById('onedriveStatus').textContent = msConnected ? '✓ Connected' : 'Not connected';
+  document.getElementById('onedriveStatus').style.color = msConnected ? 'var(--green)' : 'var(--muted)';
+  document.getElementById('onedriveConnectBtn').style.display = msConnected ? 'none' : 'flex';
+  document.getElementById('onedriveBackupBtn').style.display = msConnected ? 'flex' : 'none';
+  document.getElementById('onedriveRestoreBtn').style.display = msConnected ? 'flex' : 'none';
+  document.getElementById('onedriveDisconnectBtn').style.display = msConnected ? 'flex' : 'none';
+}
+
+function saveGdriveClientId() {
+  const val = document.getElementById('gdriveClientIdInput').value.trim();
+  if (val) { GDRIVE_CLIENT_ID_VAR = val; localStorage.setItem('gdrive_client_id', val); showToast('Google Client ID saved!', 'green'); }
+}
+function saveMsalClientId() {
+  const val = document.getElementById('msalClientIdInput').value.trim();
+  if (val) { MSAL_CLIENT_ID_VAR = val; localStorage.setItem('msal_client_id', val); showToast('Microsoft Client ID saved!', 'green'); }
+}
+
+function gdriveConnect() {
+  if (!GDRIVE_CLIENT_ID_VAR) {
+    showToast('Paste your Google Client ID in the ☁ panel to connect.', 'red');
+    return;
+  }
+  google.accounts.oauth2.initTokenClient({
+    client_id: GDRIVE_CLIENT_ID_VAR,
+    scope: GDRIVE_SCOPES,
+    callback: (resp) => {
+      if (resp.access_token) {
+        gdriveToken = resp.access_token;
+        updateSyncUI();
+        showToast('Google Drive connected!', 'green');
+      }
+    }
+  }).requestAccessToken();
+}
+
+function gdriveDisconnect() { gdriveToken = null; updateSyncUI(); }
+
+async function gdriveFindFile() {
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name='${GDRIVE_FILE_NAME}'`, {
+    headers: { Authorization: `Bearer ${gdriveToken}` }
+  });
+  const data = await res.json();
+  return data.files && data.files.length > 0 ? data.files[0].id : null;
+}
+
+async function gdriveBackup() {
+  try {
+    const json = getExportData();
+    const fileId = await gdriveFindFile();
+    const meta = { name: GDRIVE_FILE_NAME, parents: fileId ? undefined : ['appDataFolder'] };
+    const form = new FormData();
+    form.append('metadata', new Blob([JSON.stringify(meta)], { type: 'application/json' }));
+    form.append('file', new Blob([json], { type: 'application/json' }));
+    const url = fileId
+      ? `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`
+      : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
+    await fetch(url, { method: fileId ? 'PATCH' : 'POST', headers: { Authorization: `Bearer ${gdriveToken}` }, body: form });
+    showToast('Backed up to Google Drive!', 'green');
+  } catch(e) { showToast('Google Drive backup failed.', 'red'); }
+}
+
+async function gdriveRestore() {
+  try {
+    const fileId = await gdriveFindFile();
+    if (!fileId) { showToast('No backup found in Google Drive.', 'red'); return; }
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+      headers: { Authorization: `Bearer ${gdriveToken}` }
+    });
+    const json = await res.text();
+    importData(json);
+  } catch(e) { showToast('Google Drive restore failed.', 'red'); }
+}
+
+// ── ONEDRIVE ─────────────────────────────────────────────────
+let MSAL_CLIENT_ID_VAR = localStorage.getItem('msal_client_id') || '';
+const MSAL_CLIENT_ID = '';
+
+let msalApp = null;
+let msalToken = null;
+const ONEDRIVE_FILE = 'timekeeping_data.json';
+
+function getMsalApp() {
+  if (!msalApp && MSAL_CLIENT_ID_VAR) {
+    msalApp = new msal.PublicClientApplication({
+      auth: { clientId: MSAL_CLIENT_ID_VAR, authority: 'https://login.microsoftonline.com/common' },
+      cache: { cacheLocation: 'localStorage' }
+    });
+  }
+  return msalApp;
+}
+
+async function onedriveConnect() {
+  if (!MSAL_CLIENT_ID_VAR) {
+    showToast('Paste your Microsoft Client ID in the ☁ panel to connect.', 'red');
+    return;
+  }
+  try {
+    const app = getMsalApp();
+    const result = await app.loginPopup({ scopes: ['Files.ReadWrite', 'User.Read'] });
+    const tokenResult = await app.acquireTokenSilent({ scopes: ['Files.ReadWrite'], account: result.account });
+    msalToken = tokenResult.accessToken;
+    updateSyncUI();
+    showToast('OneDrive connected!', 'green');
+  } catch(e) { showToast('OneDrive connection failed.', 'red'); }
+}
+
+function onedriveDisconnect() { msalToken = null; msalApp = null; updateSyncUI(); }
+
+async function onedriveBackup() {
+  try {
+    await fetch(`https://graph.microsoft.com/v1.0/me/drive/special/approot:/${ONEDRIVE_FILE}:/content`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${msalToken}`, 'Content-Type': 'application/json' },
+      body: getExportData()
+    });
+    showToast('Backed up to OneDrive!', 'green');
+  } catch(e) { showToast('OneDrive backup failed.', 'red'); }
+}
+
+async function onedriveRestore() {
+  try {
+    const res = await fetch(`https://graph.microsoft.com/v1.0/me/drive/special/approot:/${ONEDRIVE_FILE}:/content`, {
+      headers: { Authorization: `Bearer ${msalToken}` }
+    });
+    if (!res.ok) { showToast('No backup found in OneDrive.', 'red'); return; }
+    importData(await res.text());
+  } catch(e) { showToast('OneDrive restore failed.', 'red'); }
+}
+
+// ============================================================
+// INIT
+// ============================================================
+// ============================================================
+// UPDATE CHECKER
+// ============================================================
+async function checkForUpdates() {
+  const btn = document.getElementById('updateBtn');
+  if (btn) btn.style.opacity = '0.5';
+  try {
+    const res = await fetch(VERSION_URL + '?t=' + Date.now());
+    const data = await res.json();
+    const latest = data.version;
+    if (btn) btn.style.opacity = '1';
+    if (latest && latest !== APP_VERSION) {
+      const notes = data.notes ? '\n\nWhat\'s new:\n' + data.notes : '';
+      const msg = 'A new version (' + latest + ') is available!\n\nYou have v' + APP_VERSION + '.' + notes + '\n\nDownload the update now?';
+      if (confirm(msg)) {
+        showToast('Downloading update...', 'green');
+        fetch(UPDATE_URL + '?t=' + Date.now())
+          .then(function(r) { return r.blob(); })
+          .then(function(blob) {
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'Timekeeping.html';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(function() { URL.revokeObjectURL(a.href); }, 5000);
+            const ub = document.getElementById('updateBanner');
+            if (ub) ub.style.display = 'none';
+            btn.classList.remove('update-available');
+            btn.title = 'Check for Updates';
+            showToast('Update downloaded! Replace your current file with the new one.', 'green');
+          })
+          .catch(function() { showToast('Download failed. Check your connection.', 'red'); });
+      }
+    } else {
+      showToast('You are on the latest version (v' + APP_VERSION + ')', 'green');
+    }
+  } catch(e) {
+    if (btn) btn.style.opacity = '1';
+    showToast('Could not check for updates. Are you online?', 'red');
+  }
+}
+
+// ============================================================
+// AUTOSAVE (localStorage)
+// ============================================================
+// Use filename as part of storage key so different files don't share data
+const LS_KEY = 'timekeeping_' + (window.location.pathname.split('/').pop().replace('.html','') || 'app');
+
+// ── BACKUP REMINDER ─────────────────────────────────────────
+let backupReminderEnabled = false;
+let backupReminderDays = 7;
+
+function toggleBackupReminder() {
+  backupReminderEnabled = !backupReminderEnabled;
+  const tog = document.getElementById('backupReminderToggle');
+  const thumb = document.getElementById('backupReminderThumb');
+  tog.style.background = backupReminderEnabled ? 'var(--accent)' : 'var(--border)';
+  thumb.style.left = backupReminderEnabled ? '18px' : '2px';
+}
+
+function checkBackupReminder() {
+  if (!backupReminderEnabled) return;
+  const lastStr = localStorage.getItem('lastBackupDate');
+  if (!lastStr) return; // Never backed up yet — don't nag on first open
+  const last = parseInt(lastStr);
+  const now = Date.now();
+  const daysSince = (now - last) / (1000 * 60 * 60 * 24);
+  // Also don't remind if there are no entries
+  const hasEntries = Object.values(entries).some(yr => yr.length > 0);
+  if (!hasEntries) return;
+  // Check if snoozed
+  const snoozedUntil = parseInt(localStorage.getItem('backupSnoozedUntil') || '0');
+  if (now < snoozedUntil) return;
+  if (daysSince >= backupReminderDays) {
+    setTimeout(function() {
+      const btn = document.getElementById('syncBtn');
+      if (btn) { btn.classList.add('update-available'); btn.title = 'Backup overdue — click to back up'; }
+      const banner = document.getElementById('backupBanner');
+      if (banner) banner.style.display = 'flex';
+    }, 1000);
+  }
+}
+
+function snoozeBackupReminder() {
+  // Snooze for 24 hours
+  localStorage.setItem('backupSnoozedUntil', (Date.now() + 24 * 60 * 60 * 1000).toString());
+  const banner = document.getElementById('backupBanner');
+  if (banner) banner.style.display = 'none';
+  const btn = document.getElementById('syncBtn');
+  if (btn) { btn.classList.remove('update-available'); btn.title = 'Backup / Restore'; }
+}
+
+function markBackupDone() {
+  localStorage.setItem('lastBackupDate', Date.now().toString());
+  const btn = document.getElementById('syncBtn');
+  if (btn) { btn.classList.remove('update-available'); btn.title = 'Backup / Restore'; }
+  const banner = document.getElementById('backupBanner');
+  if (banner) banner.style.display = 'none';
+}
+
+function toggleSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  const btn = document.getElementById('sidebarToggle');
+  const collapsed = sidebar.classList.toggle('collapsed');
+  btn.innerHTML = collapsed ? '&#8250;' : '&#8249;';
+  localStorage.setItem('sidebarCollapsed', collapsed);
+}
+
+// Restore sidebar state
+(function() {
+  if (localStorage.getItem('sidebarCollapsed') === 'true') {
+    setTimeout(function() {
+      const sidebar = document.getElementById('sidebar');
+      const btn = document.getElementById('sidebarToggle');
+      if (sidebar && btn) {
+        sidebar.classList.add('collapsed');
+        btn.innerHTML = '&#8250;';
+      }
+    }, 100);
+  }
+})();
+
+function autosave() {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify({
+      entries, masterLocations, masterDescriptions,
+      taxRate, deductionRate, hideNetPay, defaultPayRate,
+      backupReminderEnabled, backupReminderDays, customShiftTimes
+    }));
+  } catch(e) { console.warn('Autosave failed:', e); }
+}
+
+function autoload() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return false;
+    const d = JSON.parse(raw);
+    if (d.entries) Object.keys(d.entries).forEach(y => { entries[y] = d.entries[y]; });
+    if (d.masterLocations) masterLocations = d.masterLocations;
+    if (d.masterDescriptions) masterDescriptions = d.masterDescriptions;
+    if (typeof d.taxRate === 'number') taxRate = d.taxRate;
+    if (typeof d.deductionRate === 'number') deductionRate = d.deductionRate;
+    if (typeof d.hideNetPay === 'boolean') hideNetPay = d.hideNetPay;
+    if (typeof d.defaultPayRate === 'number') defaultPayRate = d.defaultPayRate;
+    if (d.customShiftTimes && typeof d.customShiftTimes === 'object') customShiftTimes = d.customShiftTimes;
+    if (typeof d.backupReminderEnabled === 'boolean') backupReminderEnabled = d.backupReminderEnabled;
+    if (typeof d.backupReminderDays === 'number') backupReminderDays = d.backupReminderDays;
+    if (d.customShiftTimes && typeof d.customShiftTimes === 'object') customShiftTimes = d.customShiftTimes;
+    return true;
+  } catch(e) { console.warn('Autoload failed:', e); return false; }
+}
+
+ensureAllIds();
+populateShiftDropdowns();
+
+// Auto-check for updates silently on startup
+setTimeout(async function() {
+  try {
+    const res = await fetch(VERSION_URL + '?t=' + Date.now());
+    const data = await res.json();
+    if (data.version && data.version !== APP_VERSION) {
+      showToast('Update available: v' + data.version + ' — click ⟳ to download', 'green');
+      const btn = document.getElementById('updateBtn');
+      if (btn) { btn.style.color = 'var(--yellow)'; btn.style.borderColor = 'var(--yellow)'; }
+    }
+  } catch(e) { /* silent fail - user may be offline */ }
+}, 3000);
+
+// Load from localStorage if available, otherwise use hardcoded data
+const loaded = autoload();
+checkBackupReminder();
+ensureAllIds();
+
+renderYearTabs();
+
+// Set to most recent numeric year
+const availYears = Object.keys(entries).filter(y => !isNaN(y)).map(Number).sort((a,b)=>a-b);
+setYear(availYears[availYears.length - 1]);
+</script>
+</body>
+</html>
