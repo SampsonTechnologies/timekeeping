@@ -1,1 +1,1 @@
-{"version": "1.4.1", "notes": "Fixed custom Other location displaying as BAE after save"}
+{"version": "1.4.3", "notes": "Hours now calculate exactly from shift start/end including minutes (e.g. 1200-1415 = 2.25)"}
